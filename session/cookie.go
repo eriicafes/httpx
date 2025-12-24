@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -316,12 +317,15 @@ func validateSecret(secret [][]byte, encrypted bool) error {
 		return errors.New("secret must have at least one key")
 	}
 	for _, key := range secret {
-		if len(key) < 32 {
-			return errors.New("secret key must be at least 32 bytes")
-		}
 		// For encryption, ensure keys are exactly 32 bytes (AES-256)
-		if encrypted && len(key) != 32 {
-			return errors.New("encryption keys must be exactly 32 bytes for AES-256")
+		if encrypted {
+			if len(key) == 32 {
+				return nil
+			}
+			return fmt.Errorf("secret key for encrypted cookie must be 32 bytes, got %d bytes", len(key))
+		}
+		if len(key) < 32 {
+			return fmt.Errorf("secret key for signed cookie must be at least 32 bytes, got %d bytes", len(key))
 		}
 	}
 	return nil
