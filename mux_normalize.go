@@ -25,10 +25,10 @@ func (m *normalizeTrailingSlashMux) patterns(pattern string) (pattern1, pattern2
 	if strings.HasSuffix(pattern, "/") {
 		return pattern, ""
 	}
-	if strings.HasSuffix(pattern, "{$}") {
+	if strings.HasSuffix(pattern, "/{$}") {
 		return pattern, ""
 	}
-	return pattern, pattern + "{$}"
+	return pattern, pattern + "/{$}"
 }
 
 func (m *normalizeTrailingSlashMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,11 +44,7 @@ func (m *normalizeTrailingSlashMux) Handle(pattern string, handler http.Handler)
 }
 
 func (m *normalizeTrailingSlashMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	pattern1, pattern2 := m.patterns(pattern)
-	m.mux.HandleFunc(pattern1, handler)
-	if pattern2 != "" {
-		m.mux.HandleFunc(pattern2, handler)
-	}
+	m.Handle(pattern, http.HandlerFunc(handler))
 }
 
 func (m *normalizeTrailingSlashMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {

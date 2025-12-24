@@ -29,7 +29,7 @@ func (m *fallbackMux) Handle(pattern string, handler http.Handler) {
 }
 
 func (m *fallbackMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	m.mux.HandleFunc(pattern, handler)
+	m.Handle(pattern, http.HandlerFunc(handler))
 }
 
 func (m *fallbackMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {

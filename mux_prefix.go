@@ -5,7 +5,32 @@ import (
 	"strings"
 )
 
-// Prefix returns a Mux which registers routes with prefix.
+// Prefix returns a Mux that registers routes under the given prefix.
+//
+// Prefix concatenates the prefix with each registered pattern and registers
+// the resulting pattern on the underlying mux. Any HTTP method specified in
+// the pattern (for example "GET /users") is preserved in the resulting pattern.
+// No other parsing, normalization, or rewriting is performed.
+//
+// The prefix must start with '/'.
+// The pattern may be empty ("") or start with '/'.
+//
+// Examples:
+//
+//	Prefix(mux, "/api").Handle("", h)
+//	  → registers "/api"
+//
+//	Prefix(mux, "/api").Handle("/", h)
+//	  → registers "/api/"
+//
+//	Prefix(mux, "/api").Handle("POST ", h)
+//	  → registers "POST /api"
+//
+//	Prefix(mux, "/api").Handle("/users", h)
+//	  → registers "/api/users"
+//
+//	Prefix(mux, "/api").Handle("GET /users", h)
+//	  → registers "GET /api/users"
 func Prefix(mux ServeMux, prefix string) Mux {
 	return &prefixMux{mux, prefix}
 }
@@ -36,7 +61,7 @@ func (m *prefixMux) Handle(pattern string, handler http.Handler) {
 }
 
 func (m *prefixMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	m.mux.HandleFunc(m.prefixPattern(pattern), handler)
+	m.Handle(pattern, http.HandlerFunc(handler))
 }
 
 func (m *prefixMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {

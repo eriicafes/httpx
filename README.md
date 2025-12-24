@@ -55,7 +55,7 @@ mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error 
         return httperrors.New("User email not verified", http.StatusForbidden)
     }
 
-    // Simple error - returns 500 with error message
+    // plain error - returns 500 with error message
     // Returns: {"error": "user has been deleted"} with status 500
     if user.Deleted {
         return fmt.Errorf("user has been deleted")
@@ -223,7 +223,7 @@ errorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
         message, statusCode, details := httpErr.HTTPError()
         w.Header().Set("Content-Type", "application/json")
         w.WriteHeader(statusCode)
-        json.NewEncoder(w).Encode(map[string]interface{}{
+        json.NewEncoder(w).Encode(map[string]any{
             "error":   message,
             "details": details,
         })
