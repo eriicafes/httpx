@@ -2,36 +2,30 @@
 
 Structured HTTP error handling with status codes and details.
 
-This package provides a way to create errors that carry HTTP status codes and additional context, making it easy to convert application errors into proper HTTP responses.
+## Installation
+
+```bash
+go get github.com/eriicafes/httpx
+```
 
 ## Features
 
 - **Status Codes** - Attach HTTP status codes to errors
-- **Error Details** - Include field-level validation errors or additional context
+- **Error Details** - Include field-level errors for additional context
 - **Error Wrapping** - Wrap existing errors while preserving the error chain
-- **Type-Safe Unwrapping** - Extract HTTPError from any error chain
-
-## Installation
-
-```bash
-go get github.com/eriicafes/httpx/httperrors
-```
+- **Error Unwrapping** - Extract HTTPError from any error chain
 
 ## Usage
 
 ### Creating Errors
 
-Create new errors with custom messages and status codes. Use this when you're creating domain-specific errors that don't wrap existing errors.
+Create new errors with custom messages and status codes.
 
 ```go
 import "github.com/eriicafes/httpx/httperrors"
 
-// Simple HTTP error
-// Returns: {"error": "User not found"} with status 404
 err := httperrors.New("User not found", http.StatusNotFound)
 
-// With additional details for field-level errors
-// Returns: {"error": "Invalid input", "details": {"email": "...", "password": "..."}} with status 400
 err := httperrors.NewDetails("Invalid input", http.StatusBadRequest, httperrors.Details{
     "email":    "must be a valid email address",
     "password": "must be at least 8 characters",
@@ -40,18 +34,13 @@ err := httperrors.NewDetails("Invalid input", http.StatusBadRequest, httperrors.
 
 ### Reporting Errors
 
-Convert standard Go errors into HTTPErrors while preserving their original error messages. Use `Report` when you want to expose the actual error message to clients (e.g., database errors in development, validation errors).
+Convert standard Go errors into HTTPErrors while preserving their original error messages. Use `Report` when you want to expose the error message to clients.
 
 ```go
-// Report - converts standard error, using its Error() message
-// Use when you want the original error message in the HTTP response
 if err := db.QueryRow(...); err != nil {
-    // Returns: {"error": "sql: no rows in result set"} with status 500
     return httperrors.Report(err, http.StatusInternalServerError)
 }
 
-// With details
-// Returns: {"error": "validation failed: ...", "details": {...}} with status 400
 err := httperrors.ReportDetails(validationErr, http.StatusBadRequest, httperrors.Details{
     "field": "validation error",
 })
@@ -59,26 +48,19 @@ err := httperrors.ReportDetails(validationErr, http.StatusBadRequest, httperrors
 
 ### Wrapping Errors
 
-Wrap existing errors with custom HTTP-friendly messages while preserving the error chain for logging. Use `Wrap` when you want to hide internal error details from clients but still maintain them for debugging.
+Wrap existing errors with custom user-friendly messages while preserving the error chain for logging. Use `Wrap` when you want to hide internal error details from clients but still maintain them for debugging.
 
 ```go
-// Wrap - add custom message while preserving error chain
-// Use when you want a different message than the original error
 if err := processPayment(); err != nil {
-    // Returns: {"error": "Payment processing failed"} with status 502
-    // Original error preserved in error chain for logging
     return httperrors.Wrap(err, "Payment processing failed", http.StatusBadGateway)
 }
 
-// Wrap with details
 err := httperrors.WrapDetails(err, "Validation failed", http.StatusBadRequest, httperrors.Details{
     "email": "already in use",
 })
 
-// When wrapping an HTTPError, empty fields inherit from the wrapped error
 baseErr := httperrors.New("Not found", http.StatusNotFound)
 err := httperrors.WrapDetails(baseErr, "Resource not found", 0, nil)
-// Result: message="Resource not found", statusCode=404 (inherited), details=nil
 ```
 
 ### Unwrapping
@@ -86,17 +68,14 @@ err := httperrors.WrapDetails(baseErr, "Resource not found", 0, nil)
 Extract HTTPError from the error chain to access status codes and details. This works even if the HTTPError is wrapped in multiple layers of standard Go errors.
 
 ```go
-// Extract HTTPError from any error in the error chain
 if httpErr, ok := httperrors.Unwrap(err); ok {
     log.Printf("HTTP %d: %s", httpErr.StatusCode(), httpErr.Message())
-    // Get all details
     message, statusCode, details := httpErr.HTTPError()
 }
 
-// Works through multiple layers of standard error wrapping
 baseHTTPErr := httperrors.New("Base error", http.StatusNotFound)
 wrappedErr := fmt.Errorf("context: %w", baseHTTPErr)
-httpErr, ok := httperrors.Unwrap(wrappedErr) // true, finds baseHTTPErr
+httpErr, ok := httperrors.Unwrap(wrappedErr)
 ```
 
 ### Accessing Error Information
@@ -108,16 +87,11 @@ err := httperrors.NewDetails("Invalid input", http.StatusBadRequest, httperrors.
     "email": "invalid format",
 })
 
-// Individual fields
-message := err.Message()       // "Invalid input"
-statusCode := err.StatusCode() // 400
-details := err.Details()       // map[string]string{"email": "invalid format"}
+message := err.Message()
+statusCode := err.StatusCode()
+details := err.Details()
 
-// All fields at once with automatic defaults
 message, statusCode, details := err.HTTPError()
-// If message is empty: defaults to "Something went wrong"
-// If statusCode is 0: defaults to 500
-// If details is nil: returns nil
 ```
 
 ## API

@@ -109,13 +109,15 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	// Default error handling
-	// Log only for internal errors (logs the underlying error, not the user-facing message)
 	var internalErr *internalError
 	if errors.As(err, &internalErr) {
-		log.Printf("[ERROR] %s %s: %v", r.Method, r.URL.Path, internalErr.err)
+		// Log underlying error for internal errors
+		log.Printf("[ERROR] %s %s: %v", r.Method, r.URL.Path, internalErr.err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
 	}
 
-	w.WriteHeader(http.StatusInternalServerError)
 	json.NewEncoder(w).Encode(map[string]any{
 		"error": err.Error(),
 	})

@@ -33,16 +33,16 @@ var handlerTests = []struct {
 		handler: func(w http.ResponseWriter, r *http.Request) error {
 			return errors.New("test error")
 		},
-		expectedStatus: http.StatusInternalServerError,
+		expectedStatus: http.StatusBadRequest,
 		expectedError:  "test error",
 	},
 	{
 		name: "with HTTP error",
 		handler: func(w http.ResponseWriter, r *http.Request) error {
-			return httperrors.New("bad request", http.StatusBadRequest)
+			return httperrors.New("forbidden", http.StatusForbidden)
 		},
-		expectedStatus: http.StatusBadRequest,
-		expectedError:  "bad request",
+		expectedStatus: http.StatusForbidden,
+		expectedError:  "forbidden",
 	},
 	{
 		name: "with HTTP error with details",
@@ -75,7 +75,7 @@ var handlerTests = []struct {
 			w.Header().Set("X-Custom-Header", "should-remain")
 			return errors.New("test error")
 		},
-		expectedStatus: http.StatusInternalServerError,
+		expectedStatus: http.StatusBadRequest,
 		expectedError:  "test error",
 	},
 }
@@ -282,8 +282,8 @@ func TestApplyMuxErrorHandler(t *testing.T) {
 
 	wrappedHandler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 
 	// Verify it used the mux's error handler

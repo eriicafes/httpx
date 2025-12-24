@@ -35,11 +35,11 @@ func (e *httpError) Error() string {
 	if e.err == nil {
 		return e.message
 	}
-	mssg := e.err.Error()
-	if e.message == mssg {
+	err := e.err.Error()
+	if e.message == err {
 		return e.message
 	}
-	return fmt.Sprintf("%s: %s", e.message, mssg)
+	return fmt.Sprintf("%s: %s", e.message, err)
 }
 
 func (e *httpError) Unwrap() error { return e.err }

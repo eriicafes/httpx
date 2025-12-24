@@ -55,8 +55,8 @@ mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error 
         return httperrors.New("User email not verified", http.StatusForbidden)
     }
 
-    // plain error - returns 500 with error message
-    // Returns: {"error": "user has been deleted"} with status 500
+    // plain error - returns 400 with error message
+    // Returns: {"error": "user has been deleted"} with status 400
     if user.Deleted {
         return fmt.Errorf("user has been deleted")
     }
@@ -66,8 +66,6 @@ mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error 
 
 httpx.ListenAndServe(":8080", mux, nil)
 ```
-
-**Default Error Handling:** When using `Route()` without configuring a custom error handler via `Fallback()`, errors are automatically converted to JSON responses with `{"error": "error message"}` and `http.StatusInternalServerError` (500). The default handler also supports `httperrors.HTTPError` for custom status codes and `InternalError` for logging internal errors. See [Custom Error Handling](#custom-error-handling) to customize this behavior.
 
 ### Graceful Shutdown
 
@@ -204,12 +202,12 @@ For each route pattern, two routes are registered: the original pattern and the 
 
 ### Custom Error Handling
 
-The default error handler automatically:
-- Returns JSON responses with `{"error": "error message"}` and `http.StatusInternalServerError` (500)
+By default, `Route()` and `httpx.HandlerFunc` use the default error handler which:
+- Returns JSON responses with `{"error": "error message"}` and status 400 for regular errors
+- Returns status 500 for internal errors (wrapped with `InternalError`), logging the underlying error
 - Supports `httperrors.HTTPError` for custom status codes and details
-- Supports `InternalError` for logging internal errors while returning user-friendly messages
 
-You can override this with custom error handlers:
+You can customize error handling using `Fallback()`:
 
 ```go
 import (
@@ -318,7 +316,7 @@ handler := httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error 
 http.Handle("GET /users/{id}", handler)
 ```
 
-**Note:** `HandlerFunc` uses the default error handler which sends JSON responses with `http.StatusInternalServerError`. It automatically supports `httperrors.HTTPError` and `InternalError`.
+**Note:** `HandlerFunc` uses the default error handler which sends JSON responses with status 400 for regular errors and 500 for internal errors. It automatically supports `httperrors.HTTPError` and `InternalError`.
 
 ### Converting Existing Handlers
 
