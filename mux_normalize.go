@@ -6,8 +6,9 @@ import (
 )
 
 // NormalizeTrailingSlash returns a Mux which registers routes with normalized trailing slash.
-// For each route it registers "/path" and "/path/{$}".
+// For each route pattern it registers "/path" and "/path/{$}".
 // This serves both the base path and the exact trailing slash path.
+// Patterns ending with `/` or `{$}` are not duplicated.
 func NormalizeTrailingSlash(mux ServeMux) Mux {
 	return &normalizeTrailingSlashMux{mux}
 }
@@ -51,5 +52,5 @@ func (m *normalizeTrailingSlashMux) HandleFunc(pattern string, handler func(http
 }
 
 func (m *normalizeTrailingSlashMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {
-	m.Handle(pattern, ApplyMuxErrorHandler(m, handler))
+	m.Handle(pattern, ApplyMuxErrorHandler(m.mux, handler))
 }

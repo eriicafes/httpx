@@ -10,8 +10,9 @@ go get github.com/eriicafes/httpx
 
 ## Features
 
-- **Error-returning handlers** - Write handlers that return errors instead of manually calling `http.Error`
-- **Middleware support** - Apply middlewares to routes with automatic composition
+- **Error-returning handlers** - Write handlers that return errors
+- **Graceful shutdown** - Built-in graceful server shutdown
+- **Middleware support** - Apply middlewares to routes
 - **Route prefixing** - Group routes under a common prefix
 - **Trailing slash normalization** - Automatically handle routes with/without trailing slashes
 - **Custom error handling** - Define how errors from handlers are processed
@@ -19,7 +20,7 @@ go get github.com/eriicafes/httpx
 
 ## Subpackages
 
-- [**httperrors**](httperrors/) - Structured HTTP error handling with status codes
+- [**httperrors**](httperrors/) - Structured HTTP error handling with status codes and details
 - [**contextkey**](contextkey/) - Type-safe context key management with generics
 - [**session**](session/) - Session-based authentication, cookies, and flash messages
 
@@ -34,22 +35,70 @@ mux := httpx.New()
 
 // Regular handler
 mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
-    w.Write([]byte("Hello, World!"))
+    fmt.Fprintln(w, "Hello, World!")
 })
 
-// Error-returning handler
+// Error-returning handler with different error types
 mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error {
     id := r.PathValue("id")
     user, err := getUser(id)
     if err != nil {
-        return err // Automatically handled
+        // Internal error - logs underlying error, returns user-friendly message
+        // Logs: "[ERROR] GET /users/123: sql: no rows in result set"
+        // Returns: {"error": "Failed to retrieve user"} with status 500
+        return httpx.InternalError(err, "Failed to retrieve user")
     }
-    json.NewEncoder(w).Encode(user)
-    return nil
+
+    // HTTP error - custom status code and message
+    // Returns: {"error": "User email not verified"} with status 403
+    if !user.Verified {
+        return httperrors.New("User email not verified", http.StatusForbidden)
+    }
+
+    // Simple error - returns 500 with error message
+    // Returns: {"error": "user has been deleted"} with status 500
+    if user.Deleted {
+        return fmt.Errorf("user has been deleted")
+    }
+
+    return httpx.Send(w, user)
 })
 
-http.ListenAndServe(":8080", mux)
+httpx.ListenAndServe(":8080", mux, nil)
 ```
+
+**Default Error Handling:** When using `Route()` without configuring a custom error handler via `Fallback()`, errors are automatically converted to JSON responses with `{"error": "error message"}` and `http.StatusInternalServerError` (500). The default handler also supports `httperrors.HTTPError` for custom status codes and `InternalError` for logging internal errors. See [Custom Error Handling](#custom-error-handling) to customize this behavior.
+
+### Graceful Shutdown
+
+Start your server with automatic graceful shutdown:
+
+```go
+import "github.com/eriicafes/httpx"
+
+mux := httpx.New()
+mux.HandleFunc("GET /", handler)
+
+// Simple usage with defaults (30s shutdown timeout)
+httpx.ListenAndServe(":8080", mux, nil)
+
+// Custom shutdown timeout
+httpx.ListenAndServe(":8080", mux, &httpx.ServerConfig{
+    ShutdownTimeout: 60 * time.Second,
+})
+
+// Custom server configuration
+httpx.ListenAndServe(":8080", mux, &httpx.ServerConfig{
+    Server: &http.Server{
+        ReadTimeout:  10 * time.Second,
+        WriteTimeout: 15 * time.Second,
+        IdleTimeout:  120 * time.Second,
+    },
+    ShutdownTimeout: 45 * time.Second,
+})
+```
+
+The server gracefully shuts down when receiving SIGINT/SIGTERM signals, completing in-flight requests before stopping.
 
 ### Middleware
 
@@ -57,16 +106,67 @@ http.ListenAndServe(":8080", mux)
 import "github.com/eriicafes/httpx"
 
 func loggingMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        log.Printf("%s %s", r.Method, r.URL.Path)
-        next.ServeHTTP(w, r)
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[logging] before %s %s", r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+		log.Printf("[logging] after %s %s", r.Method, r.URL.Path)
+	})
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("[auth] before")
+		next.ServeHTTP(w, r)
+		log.Println("[auth] after")
+	})
 }
 
 // Apply middleware to all routes
-mux := httpx.Use(http.NewServeMux(), loggingMiddleware)
+mux := httpx.Use(
+	http.NewServeMux(),
+	loggingMiddleware,
+	authMiddleware,
+)
 
 mux.HandleFunc("GET /users", handler)
+```
+
+Request life cycle:
+
+```text
+Request enters
+    |
+    v
++-----------------------+
+| loggingMiddleware     |
+|  - before             |
++-----------------------+
+            |
+            v
+        +-----------------------+
+        | authMiddleware        |
+        |  - before             |
+        +-----------------------+
+                    |
+                    v
+              +------------------+
+              |   /users handler |
+              +------------------+
+                    |
+                    v
+        +-----------------------+
+        | authMiddleware        |
+        |  - after              |
+        +-----------------------+
+            |
+            v
++-----------------------+
+| loggingMiddleware     |
+|  - after              |
++-----------------------+
+    |
+    v
+Response exits
 ```
 
 ### Route Prefixing
@@ -100,9 +200,16 @@ mux.HandleFunc("GET /api/users", listUsers)
 http.ListenAndServe(":8080", mux)
 ```
 
-For each route pattern, two routes are registered: the original pattern and the pattern with exact trailing slash match using `{$}`. Patterns already ending with `/` or `{$}` are not duplicated.
+For each route pattern, two routes are registered: the original pattern and the pattern with exact trailing slash match using `{$}`. Patterns ending with `/` or `{$}` are not duplicated.
 
 ### Custom Error Handling
+
+The default error handler automatically:
+- Returns JSON responses with `{"error": "error message"}` and `http.StatusInternalServerError` (500)
+- Supports `httperrors.HTTPError` for custom status codes and details
+- Supports `InternalError` for logging internal errors while returning user-friendly messages
+
+You can override this with custom error handlers:
 
 ```go
 import (
@@ -114,6 +221,7 @@ errorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
     // Handle structured HTTP errors
     if httpErr, ok := httperrors.Unwrap(err); ok {
         message, statusCode, details := httpErr.HTTPError()
+        w.Header().Set("Content-Type", "application/json")
         w.WriteHeader(statusCode)
         json.NewEncoder(w).Encode(map[string]interface{}{
             "error":   message,
@@ -122,7 +230,12 @@ errorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
         return
     }
     // Fallback for other errors
-    http.Error(w, err.Error(), http.StatusInternalServerError)
+    log.Println(r.Method, r.URL.Path, err.Error())
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusInternalServerError)
+    json.NewEncoder(w).Encode(map[string]any{
+        "error": "Internal Server Error",
+    })
 }
 
 mux := httpx.Fallback(http.NewServeMux(), errorHandler)
@@ -130,10 +243,9 @@ mux := httpx.Fallback(http.NewServeMux(), errorHandler)
 mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error {
     user, err := getUser(r.PathValue("id"))
     if err != nil {
-        return httperrors.New("User not found", http.StatusNotFound)
+        return err
     }
-    json.NewEncoder(w).Encode(user)
-    return nil
+    return httpx.Send(w, user)
 })
 ```
 
@@ -144,7 +256,7 @@ mux := httpx.New()
 mux = httpx.NormalizeTrailingSlash(mux)
 mux = httpx.Prefix(mux, "/api/v1")
 mux = httpx.Use(mux, loggingMiddleware, authMiddleware)
-mux = httpx.Fallback(mux, customErrorHandler)
+mux = httpx.Fallback(mux, errorHandler)
 
 // Handler with trailing slash normalization, /api/v1 prefix,
 // middleware, and custom error handling
@@ -156,56 +268,9 @@ mux.Route("GET /users", func(w http.ResponseWriter, r *http.Request) error {
 
 ## Advanced
 
-### Layered Error Handlers
-
-Create specialized error handling for different parts of your application:
-
-```go
-globalErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
-    // Handle structured HTTP errors
-    if httpErr, ok := httperrors.Unwrap(err); ok {
-        message, statusCode, _ := httpErr.HTTPError()
-        http.Error(w, message, statusCode)
-        return
-    }
-
-    // Fallback for other errors
-    log.Println(err.Error())
-    http.Error(w, "Something went wrong", http.StatusInternalServerError)
-}
-
-apiErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// Handle structured HTTP errors
-	if httpErr, ok := httperrors.Unwrap(err); ok {
-		message, statusCode, _ := httpErr.HTTPError()
-		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(map[string]any{
-			"error":   message,
-		})
-		return
-	}
-
-	// Fallback for other errors
-    log.Println(err.Error())
-	w.WriteHeader(http.StatusInternalServerError)
-	json.NewEncoder(w).Encode(map[string]any{
-		"error": "Something went wrong",
-	})
-}
-
-mux := httpx.Fallback(http.NewServeMux(), globalErrorHandler)
-apiMux := httpx.Fallback(httpx.Prefix(mux, "/api"), apiErrorHandler)
-
-// API routes use apiErrorHandler, other routes use globalErrorHandler
-apiMux.Route("GET /users", handler)
-mux.Route("GET /health", handler)
-```
-
 ### Retrieving Error Handlers
 
-Get a mux's error handler to delegate to parent handlers:
+Get a mux's error handler or the default if none is configured:
 
 ```go
 parentHandler := httpx.MuxErrorHandler(parentMux)
@@ -235,6 +300,26 @@ handler := func(w http.ResponseWriter, r *http.Request) error {
 mux.Handle("GET /custom", httpx.ApplyMuxErrorHandler(mux, handler))
 ```
 
+### Using HandlerFunc
+
+Convert error-returning functions into `http.Handler`:
+
+```go
+// HandlerFunc converts an error-returning function to http.Handler
+handler := httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+    user, err := getUser(r.PathValue("id"))
+    if err != nil {
+        // Use InternalError to wrap internal errors
+        return httpx.InternalError(err, "Failed to retrieve user")
+    }
+    return httpx.Send(w, user)
+})
+
+http.Handle("GET /users/{id}", handler)
+```
+
+**Note:** `HandlerFunc` uses the default error handler which sends JSON responses with `http.StatusInternalServerError`. It automatically supports `httperrors.HTTPError` and `InternalError`.
+
 ### Converting Existing Handlers
 
 Wrap existing handlers to add httpx features:
@@ -242,11 +327,11 @@ Wrap existing handlers to add httpx features:
 ```go
 // Existing mux
 existingMux := http.NewServeMux()
-existingMux.HandleFunc("GET /legacy", legacyHandler)
+existingMux.HandleFunc("GET /", handlerFunc)
 
 // Add httpx features
-mux := httpx.Use(existingMux, loggingMiddleware)
-mux = httpx.Fallback(mux, customErrorHandler)
+mux := httpx.Use(existingMux)
+mux = httpx.Fallback(mux, errorHandler)
 
 // Use error-returning handlers
 mux.Route("GET /api/data", func(w http.ResponseWriter, r *http.Request) error {
@@ -295,7 +380,6 @@ func NewLoggingMux(mux httpx.ServeMux) httpx.Mux {
 }
 
 mux := NewLoggingMux(http.NewServeMux())
-mux = httpx.Fallback(mux, errorHandler)
 ```
 
 **Key points:**

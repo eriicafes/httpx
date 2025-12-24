@@ -40,5 +40,5 @@ func (m *prefixMux) HandleFunc(pattern string, handler func(http.ResponseWriter,
 }
 
 func (m *prefixMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {
-	m.Handle(pattern, ApplyMuxErrorHandler(m, handler))
+	m.Handle(pattern, ApplyMuxErrorHandler(m.mux, handler))
 }
