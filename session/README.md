@@ -23,7 +23,9 @@ Session-based authentication following the [Lucia Auth guide](https://lucia-auth
 
 ```go
 import (
+    "net/http"
     "time"
+    "github.com/eriicafes/httpx"
     "github.com/eriicafes/httpx/session"
 )
 
@@ -72,6 +74,14 @@ func (s *MySessionStore) DeleteUserSessions(user User) error {
 // Create auth instance
 store := &MySessionStore{}
 auth, err := session.NewAuth(store)
+
+// CSRF protection
+csrf := http.NewCrossOriginProtection()
+
+mux := httpx.Use(http.NewServeMux(), csrf.Handler)
+
+mux.Route("POST /login", loginHandler)
+mux.Route("POST /logout", logoutHandler)
 ```
 
 ### Login
@@ -120,6 +130,41 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintf(w, "Logged out successfully")
 }
 ```
+
+### CSRF Protection
+
+For cookie-based authentication, `SameSite=Lax` limits when session cookies are sent, while Go’s origin-based CSRF protection blocks non-safe cross-origin browser requests (including those from other subdomains). Together, they provide protection against CSRF, provided that safe HTTP methods are never used to perform state-changing actions.
+
+Use Go 1.25's `http.NewCrossOriginProtection()` to block cross-origin requests:
+
+```go
+csrf := http.NewCrossOriginProtection()
+
+mux := httpx.Use(http.NewServeMux(), csrf.Handler)
+```
+
+Cross-origin requests are detected with the `Sec-Fetch-Site` header or by comparing the hostname of the `Origin` header with `Host` header. GET requests are always allowed.
+
+**Configure cross origin protection:**
+
+```go
+csrf := http.NewCrossOriginProtection()
+
+// Trust additional origins
+csrf.AddTrustedOrigin("https://app.example.com")
+
+// Use a custom error response
+csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    httpx.SendStatus(w, http.StatusForbidden, httpx.JSON{
+        "error": "invalid_origin",
+    })
+}))
+
+mux := httpx.Use(http.NewServeMux(), csrf.Handler)
+```
+
+For more details, see the [http.CrossOriginProtection](https://pkg.go.dev/net/http#CrossOriginProtection) documentation.
+
 
 ## Cookies
 
