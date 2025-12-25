@@ -202,10 +202,10 @@ For each route pattern, two routes are registered: the original pattern and the 
 
 ### Custom Error Handling
 
-By default, `Route()` and `httpx.HandlerFunc` use the default error handler which:
-- Returns JSON responses with `{"error": "error message"}` and status 400 for regular errors
-- Returns status 500 for internal errors (wrapped with `InternalError`), logging the underlying error
-- Supports `httperrors.HTTPError` for custom status codes and details
+By default, `Route()` and `httpx.HandlerFunc` use the default error handler which sends JSON responses with the following behavior:
+- **Regular errors**: Status 400 (Bad Request) with `{"error": "error message"}`
+- **Internal errors** (wrapped with `InternalError`): Status 500 (Internal Server Error) with user-friendly message, logs underlying error server-side
+- **HTTP errors** (`httperrors.HTTPError`): Custom status codes and details
 
 You can customize error handling using `Fallback()`:
 
@@ -276,29 +276,17 @@ childErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
 childMux := httpx.Fallback(parentMux, childErrorHandler)
 ```
 
-### Wrapping Error Handlers
+### Converting to http.Handler
 
-Get an `http.Handler` that automatically applies the mux's error handler:
+When you need to pass an `http.Handler` somewhere (like `http.Handle`, middleware, or custom mux implementations), convert error-returning handlers using one of these approaches:
 
-```go
-handler := func(w http.ResponseWriter, r *http.Request) error {
-    return nil
-}
-
-// Returns http.Handler with automatic error handling
-mux.Handle("GET /custom", httpx.ApplyMuxErrorHandler(mux, handler))
-```
-
-### Using HandlerFunc
-
-Convert error-returning functions into `http.Handler`:
+**1. Using `HandlerFunc` (default error handler):**
 
 ```go
-// HandlerFunc converts an error-returning function to http.Handler
+// Uses the default error handler
 handler := httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
     user, err := getUser(r.PathValue("id"))
     if err != nil {
-        // Use InternalError to wrap internal errors
         return httpx.InternalError(err, "Failed to retrieve user")
     }
     return httpx.Send(w, user)
@@ -307,7 +295,25 @@ handler := httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error 
 http.Handle("GET /users/{id}", handler)
 ```
 
-**Note:** `HandlerFunc` uses the default error handler which sends JSON responses with status 400 for regular errors and 500 for internal errors. It automatically supports `httperrors.HTTPError` and `InternalError`.
+**2. Using `Handler` (reuses mux's error handler):**
+
+Useful when you have an existing mux with custom error handling and want to reuse it:
+
+```go
+// Create mux with custom error handling
+mux := httpx.Fallback(http.NewServeMux(), customErrorHandler)
+
+handler := func(w http.ResponseWriter, r *http.Request) error {
+    user, err := getUser(r.PathValue("id"))
+    if err != nil {
+        return err
+    }
+    return httpx.Send(w, user)
+}
+
+// Reuses mux's custom error handler
+http.Handle("GET /users/{id}", httpx.Handler(mux, handler))
+```
 
 ### Converting Existing Handlers
 
@@ -360,7 +366,7 @@ func (m *LoggingMux) HandleFunc(pattern string, handler func(http.ResponseWriter
 }
 
 func (m *LoggingMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {
-    m.Handle(pattern, httpx.ApplyMuxErrorHandler(m, handler))
+    m.Handle(pattern, httpx.Handler(m, handler))
 }
 
 // Usage
@@ -374,7 +380,7 @@ mux := NewLoggingMux(http.NewServeMux())
 **Key points:**
 - Implement `ServeHTTP`, `Handle`, `HandleFunc`, and `Route` methods
 - Use `SubMux()` to expose the underlying mux for error handler delegation
-- Use `httpx.ApplyMuxErrorHandler(mux, handler)` in `Route()` to wrap error-returning handlers
+- Use `httpx.Handler(mux, handler)` in `Route()` to wrap error-returning handlers
 
 ## License
 

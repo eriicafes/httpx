@@ -255,7 +255,7 @@ func TestApplyMuxErrorHandler(t *testing.T) {
 		return errors.New("handler error")
 	}
 
-	wrappedHandler := ApplyMuxErrorHandler(baseMux, handler)
+	wrappedHandler := Handler(baseMux, handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()

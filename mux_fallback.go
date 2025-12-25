@@ -33,5 +33,5 @@ func (m *fallbackMux) HandleFunc(pattern string, handler func(http.ResponseWrite
 }
 
 func (m *fallbackMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {
-	m.Handle(pattern, ApplyMuxErrorHandler(m, handler))
+	m.Handle(pattern, Handler(m, handler))
 }

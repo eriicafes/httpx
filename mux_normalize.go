@@ -48,5 +48,5 @@ func (m *normalizeTrailingSlashMux) HandleFunc(pattern string, handler func(http
 }
 
 func (m *normalizeTrailingSlashMux) Route(pattern string, handler func(http.ResponseWriter, *http.Request) error) {
-	m.Handle(pattern, ApplyMuxErrorHandler(m.mux, handler))
+	m.Handle(pattern, Handler(m.mux, handler))
 }

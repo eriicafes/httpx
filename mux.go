@@ -106,12 +106,10 @@ func New() Mux {
 // If returned error is non-nil, it handles the error using the default error handler.
 //
 // The default error handler replies to the request with a JSON response
-// of the error message and an [http.StatusInternalServerError] code.
-// It also supports [httperrors.HTTPError] and [InternalError].
-//
-// For better control over error responses:
-//   - Use [InternalError] to wrap errors with user-friendly messages
-//   - Use the httperrors package for structured errors with custom status codes
+// of the error message and status code based on error type:
+//   - Regular errors: [http.StatusBadRequest] (400)
+//   - Internal errors ([InternalError]): [http.StatusInternalServerError] (500)
+//   - HTTP errors ([httperrors.HTTPError]): Custom status codes and details
 type HandlerFunc func(http.ResponseWriter, *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -130,13 +128,34 @@ type ErrorHandler interface {
 	HandleError(http.ResponseWriter, *http.Request, error)
 }
 
+// Handler converts a handler function that returns an error into an [http.Handler].
+// Handler(mux, f) is a [http.Handler] that calls f.
+// If returned error is non-nil, it handles the error using the error handler
+// extracted from mux. If mux is nil, the default error handler is used.
+//
+// The default error handler replies to the request with a JSON response
+// of the error message and status code based on error type:
+//   - Regular errors: [http.StatusBadRequest] (400)
+//   - Internal errors ([InternalError]): [http.StatusInternalServerError] (500)
+//   - HTTP errors ([httperrors.HTTPError]): Custom status codes and details
+func Handler(mux ServeMux, handler func(http.ResponseWriter, *http.Request) error) http.Handler {
+	errorHandler := MuxErrorHandler(mux)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := handler(w, r); err != nil {
+			errorHandler.HandleError(w, r, err)
+		}
+	})
+}
+
 // MuxErrorHandler returns the error handler for mux.
-// If mux does not implement the [ErrorHandler] interface,
+// If mux is nil or does not implement the [ErrorHandler] interface,
 // the default error handler is returned.
 //
 // The default error handler replies to the request with a JSON response
-// of the error message and an [http.StatusInternalServerError] code.
-// It also supports [httperrors.HTTPError] and [InternalError].
+// of the error message and status code based on error type:
+//   - Regular errors: [http.StatusBadRequest] (400)
+//   - Internal errors ([InternalError]): [http.StatusInternalServerError] (500)
+//   - HTTP errors ([httperrors.HTTPError]): Custom status codes and details
 func MuxErrorHandler(mux ServeMux) ErrorHandler {
 	for {
 		switch m := mux.(type) {
@@ -152,17 +171,17 @@ func MuxErrorHandler(mux ServeMux) ErrorHandler {
 	}
 }
 
-// ApplyMuxErrorHandler wraps an error-returning handler with the mux's error handling.
-// The error handler is retrieved from the mux using [MuxErrorHandler].
-func ApplyMuxErrorHandler(mux ServeMux, handler func(http.ResponseWriter, *http.Request) error) http.Handler {
-	errorHandler := MuxErrorHandler(mux)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := handler(w, r); err != nil {
-			errorHandler.HandleError(w, r, err)
-		}
-	})
-}
-
+// defaultErrorHandler is the default error handler used by [HandlerFunc] and [Handler].
+// It handles errors returned from handlers and sends appropriate HTTP responses.
+//
+// Error handling behavior:
+//   - Regular errors: [http.StatusBadRequest] (400)
+//   - Internal errors ([InternalError]): [http.StatusInternalServerError] (500)
+//   - HTTP errors ([httperrors.HTTPError]): Custom status codes and details
+//
+// All responses are JSON-encoded with Content-Type set to "application/json".
+// For internal errors, the underlying error is logged to help with debugging and
+// only the user-friendly message is sent to the client.
 func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	h := w.Header()
 	h.Del("Content-Length")
