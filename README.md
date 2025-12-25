@@ -315,9 +315,9 @@ handler := func(w http.ResponseWriter, r *http.Request) error {
 http.Handle("GET /users/{id}", httpx.Handler(mux, handler))
 ```
 
-### Converting Existing Handlers
+### Converting Existing Mux
 
-Wrap existing handlers to add httpx features:
+Wrap an existing mux to add httpx features:
 
 ```go
 // Existing mux
