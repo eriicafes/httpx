@@ -550,4 +550,46 @@ func TestMergeErrorData(t *testing.T) {
 			t.Errorf("expected trace_id in data")
 		}
 	})
+
+	t.Run("nil ErrorData in merge list", func(t *testing.T) {
+		code := Code("ERROR")
+		details := Details{"field": "error"}
+		var nilData nilErrorData
+
+		tests := []struct {
+			name string
+			data []ErrorData
+		}{
+			{
+				name: "nil in middle",
+				data: []ErrorData{code, nilData, details},
+			},
+			{
+				name: "nil first",
+				data: []ErrorData{nilData, code, details},
+			},
+			{
+				name: "nil last",
+				data: []ErrorData{code, details, nilData},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				// Should not panic even when ErrorData returns nil
+				err := New("Test", http.StatusBadRequest, tt.data...)
+
+				data := err.ErrorData()
+				if data == nil {
+					t.Fatal("expected non-nil data")
+				}
+			})
+		}
+	})
+}
+
+type nilErrorData struct{}
+
+func (nilErrorData) ErrorData() map[string]any {
+	return nil
 }

@@ -194,7 +194,15 @@ func mergeErrorData(data []ErrorData) map[string]any {
 	}
 	base := data[0].ErrorData()
 	for _, d := range data[1:] {
-		maps.Copy(base, d.ErrorData())
+		src := d.ErrorData()
+		if src == nil {
+			continue
+		}
+		if base == nil {
+			base = src
+			continue
+		}
+		maps.Copy(base, src)
 	}
 	return base
 }
