@@ -11,12 +11,12 @@ import (
 )
 
 var handlerTests = []struct {
-	name            string
-	handler         func(http.ResponseWriter, *http.Request) error
-	expectedStatus  int
-	expectedError   string
-	expectedBody    string
-	expectedDetails map[string]string
+	name           string
+	handler        func(http.ResponseWriter, *http.Request) error
+	expectedStatus int
+	expectedError  string
+	expectedBody   string
+	expectedCode   string
 }{
 	{
 		name: "success",
@@ -45,19 +45,13 @@ var handlerTests = []struct {
 		expectedError:  "forbidden",
 	},
 	{
-		name: "with HTTP error with details",
+		name: "with HTTP error with code",
 		handler: func(w http.ResponseWriter, r *http.Request) error {
-			return httperrors.NewDetails("validation failed", http.StatusUnprocessableEntity, map[string]string{
-				"email": "invalid email format",
-				"age":   "must be at least 18",
-			})
+			return httperrors.New("validation failed", http.StatusUnprocessableEntity, httperrors.Code("VALIDATION_ERROR"))
 		},
 		expectedStatus: http.StatusUnprocessableEntity,
 		expectedError:  "validation failed",
-		expectedDetails: map[string]string{
-			"email": "invalid email format",
-			"age":   "must be at least 18",
-		},
+		expectedCode:   "VALIDATION_ERROR",
 	},
 	{
 		name: "with internal error",
@@ -126,16 +120,9 @@ func TestHandlerFunc(t *testing.T) {
 					t.Errorf("expected error message %q, got %q", tt.expectedError, response["error"])
 				}
 
-				if tt.expectedDetails != nil {
-					details, ok := response["details"].(map[string]any)
-					if !ok {
-						t.Fatal("expected details to be a map")
-					}
-
-					for key, expectedValue := range tt.expectedDetails {
-						if details[key] != expectedValue {
-							t.Errorf("expected details[%q] = %q, got %q", key, expectedValue, details[key])
-						}
+				if tt.expectedCode != "" {
+					if response["code"] != tt.expectedCode {
+						t.Errorf("expected code %q, got %q", tt.expectedCode, response["code"])
 					}
 				}
 			}
@@ -190,16 +177,9 @@ func TestMux_Route(t *testing.T) {
 					t.Errorf("expected error message %q, got %q", tt.expectedError, response["error"])
 				}
 
-				if tt.expectedDetails != nil {
-					details, ok := response["details"].(map[string]any)
-					if !ok {
-						t.Fatal("expected details to be a map")
-					}
-
-					for key, expectedValue := range tt.expectedDetails {
-						if details[key] != expectedValue {
-							t.Errorf("expected details[%q] = %q, got %q", key, expectedValue, details[key])
-						}
+				if tt.expectedCode != "" {
+					if response["code"] != tt.expectedCode {
+						t.Errorf("expected code %q, got %q", tt.expectedCode, response["code"])
 					}
 				}
 			}
@@ -294,69 +274,5 @@ func TestApplyMuxErrorHandler(t *testing.T) {
 
 	if response["error"] != "handler error" {
 		t.Errorf("expected error message 'handler error', got %q", response["error"])
-	}
-}
-
-func TestSend(t *testing.T) {
-	rec := httptest.NewRecorder()
-
-	data := map[string]string{
-		"message": "hello",
-		"status":  "success",
-	}
-
-	if err := Send(rec, data); err != nil {
-		t.Fatalf("Send failed: %v", err)
-	}
-
-	if rec.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("expected Content-Type 'application/json', got %q", rec.Header().Get("Content-Type"))
-	}
-
-	var response map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if response["message"] != "hello" {
-		t.Errorf("expected message 'hello', got %q", response["message"])
-	}
-
-	if response["status"] != "success" {
-		t.Errorf("expected status 'success', got %q", response["status"])
-	}
-}
-
-func TestSendStatus(t *testing.T) {
-	rec := httptest.NewRecorder()
-
-	data := map[string]string{
-		"id":   "123",
-		"name": "Test User",
-	}
-
-	if err := SendStatus(rec, http.StatusCreated, data); err != nil {
-		t.Fatalf("SendStatus failed: %v", err)
-	}
-
-	if rec.Code != http.StatusCreated {
-		t.Errorf("expected status %d, got %d", http.StatusCreated, rec.Code)
-	}
-
-	if rec.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("expected Content-Type 'application/json', got %q", rec.Header().Get("Content-Type"))
-	}
-
-	var response map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if response["id"] != "123" {
-		t.Errorf("expected id '123', got %q", response["id"])
-	}
-
-	if response["name"] != "Test User" {
-		t.Errorf("expected name 'Test User', got %q", response["name"])
 	}
 }

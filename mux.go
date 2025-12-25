@@ -1,3 +1,78 @@
+// Package httpx provides extended HTTP utilities for Go, extending net/http
+// with error-returning handlers, middleware support, graceful shutdown, and
+// composable mux wrappers.
+//
+// # Error-Returning Handlers
+//
+// The core feature is handlers that return errors instead of manually writing
+// error responses:
+//
+//	mux := httpx.New()
+//	mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error {
+//	    user, err := getUser(r.PathValue("id"))
+//	    if err != nil {
+//	        return httpx.InternalError(err, "Failed to retrieve user")
+//	    }
+//	    return httpx.Send(w, user)
+//	})
+//
+// Errors are automatically converted to JSON responses with appropriate status codes:
+//   - Regular errors: 400 Bad Request
+//   - Internal errors (httpx.InternalError): 500 Internal Server Error (logged server-side)
+//   - HTTP errors (httperrors.HTTPError): Custom status codes and details
+//
+// # Graceful Shutdown
+//
+// The ListenAndServe function provides automatic graceful shutdown on SIGINT/SIGTERM:
+//
+//	httpx.ListenAndServe(":8080", mux, &httpx.ServerConfig{
+//	    ShutdownTimeout: 30 * time.Second,
+//	})
+//
+// # Middleware
+//
+// Apply middleware to routes using the Use wrapper:
+//
+//	mux := httpx.Use(
+//	    http.NewServeMux(),
+//	    loggingMiddleware,
+//	    authMiddleware,
+//	)
+//
+// # Composable Mux Wrappers
+//
+// Chain multiple mux wrappers for layered functionality:
+//
+//	mux := httpx.New()
+//	mux = httpx.NormalizeTrailingSlash(mux)
+//	mux = httpx.Prefix(mux, "/api/v1")
+//	mux = httpx.Use(mux, corsMiddleware)
+//	mux = httpx.Fallback(mux, customErrorHandler)
+//
+// Available mux wrappers:
+//   - Prefix: Add common prefix to routes
+//   - Use: Apply middleware
+//   - Fallback: Custom error handling
+//   - NormalizeTrailingSlash: Handle routes with/without trailing slashes
+//
+// # Request and Response Helpers
+//
+// Simplified JSON encoding and decoding:
+//
+//	// Read request body
+//	user, err := httpx.Read[User](r)
+//
+//	// Send response
+//	httpx.Send(w, user)
+//	httpx.SendStatus(w, http.StatusCreated, user)
+//
+// # Subpackages
+//
+// The httpx module includes specialized subpackages:
+//
+//   - httperrors: Structured HTTP error handling with status codes
+//   - contextkey: Type-safe context key management
+//   - session: Session-based authentication with cookies and flash messages
 package httpx
 
 import (
@@ -96,15 +171,10 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 
 	// Handle HTTPError
 	if httpErr, ok := httperrors.Unwrap(err); ok {
-		message, statusCode, details := httpErr.HTTPError()
-
-		response := map[string]any{"error": message}
-		if details != nil {
-			response["details"] = details
-		}
+		_, statusCode, data := httpErr.HTTPError()
 
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(data)
 		return
 	}
 
@@ -129,8 +199,6 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 // When used with the default error handler, it logs the underlying error
 // (with request method and path) while returning only the user-friendly message to the client.
 // This prevents internal implementation details from leaking while maintaining debug visibility.
-//
-// Usage:
 //
 //	user, err := getUser(id)
 //	if err != nil {
@@ -162,23 +230,4 @@ func (e *internalError) Error() string {
 
 func (e *internalError) Unwrap() error {
 	return e.err
-}
-
-// Send encodes v as JSON and writes it to the response.
-// It returns an error if encoding fails.
-//
-//	return httpx.Send(w, user)
-func Send(w http.ResponseWriter, v any) error {
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(v)
-}
-
-// SendStatus encodes v as JSON and writes it to the response with the given status code.
-// It returns an error if encoding fails.
-//
-//	return httpx.SendStatus(w, http.StatusCreated, user)
-func SendStatus(w http.ResponseWriter, statusCode int, v any) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	return json.NewEncoder(w).Encode(v)
 }

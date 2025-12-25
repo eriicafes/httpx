@@ -1,6 +1,6 @@
 # httpx
 
-Enhanced HTTP utilities for Go, extending `net/http` with middleware support, error handling, and composable mux wrappers.
+Extended HTTP utilities for Go, extending `net/http` with middleware support, error handling, and composable mux wrappers.
 
 ## Installation
 
