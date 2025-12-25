@@ -218,19 +218,13 @@ import (
 errorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
     // Handle structured HTTP errors
     if httpErr, ok := httperrors.Unwrap(err); ok {
-        _, statusCode, data := httpErr.HTTPError()
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(statusCode)
-        json.NewEncoder(w).Encode(data)
+        message, statusCode, _ := httpErr.HTTPError()
+        http.Error(w, message, statusCode)
         return
     }
     // Fallback for other errors
     log.Println("Error:", r.Method, r.URL.Path, err.Error())
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusInternalServerError)
-    json.NewEncoder(w).Encode(map[string]any{
-        "error": "Internal Server Error",
-    })
+    http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 }
 
 mux := httpx.Fallback(http.NewServeMux(), errorHandler)
