@@ -33,7 +33,7 @@ import (
 type Session struct {
     ID         string
     UserID     string
-    SecretHash []byte
+    SecretHash []byte `json:"-"` // Never send secret hash to client
     ExpiresAt  time.Time
 }
 
@@ -133,19 +133,9 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 ### CSRF Protection
 
-For cookie-based authentication, `SameSite=Lax` limits when session cookies are sent, while Go’s origin-based CSRF protection blocks non-safe cross-origin browser requests (including those from other subdomains). Together, they provide protection against CSRF, provided that safe HTTP methods are never used to perform state-changing actions.
+For cookie-based authentication, `SameSite=Lax` limits when session cookies are sent, while Go's origin-based CSRF protection blocks non-safe cross-origin browser requests (including those from other subdomains). Together, they provide protection against CSRF, provided that safe HTTP methods are never used to perform state-changing actions.
 
 Use Go 1.25's `http.NewCrossOriginProtection()` to block cross-origin requests:
-
-```go
-csrf := http.NewCrossOriginProtection()
-
-mux := httpx.Use(http.NewServeMux(), csrf.Handler)
-```
-
-Cross-origin requests are detected with the `Sec-Fetch-Site` header or by comparing the hostname of the `Origin` header with `Host` header. GET requests are always allowed.
-
-**Configure cross origin protection:**
 
 ```go
 csrf := http.NewCrossOriginProtection()
@@ -163,131 +153,21 @@ csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request
 mux := httpx.Use(http.NewServeMux(), csrf.Handler)
 ```
 
+Cross-origin requests are detected with the `Sec-Fetch-Site` header or by comparing the hostname of the `Origin` header with `Host` header. GET requests are always allowed.
+
 For more details, see the [http.CrossOriginProtection](https://pkg.go.dev/net/http#CrossOriginProtection) documentation.
 
+### Advanced Usage
 
-## Cookies
-
-Type-safe cookie operations with signing and encryption support.
-
-**Features:**
-- Generic types for cookie data (automatic JSON serialization)
-- Signed cookies with HMAC-SHA256 (prevents tampering)
-- Encrypted cookies with AES-256-GCM (for sensitive data)
-- Key rotation support
-- Unsigned cookies (for non-sensitive data)
-
-### Basic Usage
-
-```go
-// Create cookie (unsigned by default)
-cookie, err := session.NewCookie[UserData](session.CookieOptions{
-    Name:   "user_prefs",
-})
-
-// Set cookie
-userData := UserData{Theme: "dark", Lang: "en"}
-cookie.Set(w, userData)
-
-// Get cookie
-data, err := cookie.Get(r)
-
-// Delete cookie
-cookie.Delete(w)
-```
-
-### Signed Cookies
-
-```go
-secret := session.Secret([]byte("your-secret-key"))
-
-// Create an signed cookie
-cookie, err := session.NewCookie[SensitiveData](session.CookieOptions{
-    Name:      "sensitive",
-    Secret:    secret,
-})
-```
-
-### Encrypted Cookies
-
-```go
-secret := session.Secret([]byte("your-secret-key"))
-
-// Create an encrypted cookie
-cookie, err := session.NewCookie[SensitiveData](session.CookieOptions{
-    Name:      "sensitive",
-    Secret:    secret,
-    Encrypted: true,
-})
-```
-
-### Cookie Options
-
-```go
-// Using DefaultCookieOptions with custom options
-opts := session.DefaultCookieOptions("my_cookie",
-    session.WithCookieSecret(session.Secret(key1, key2)),
-    session.WithCookieDuration(time.Hour * 24), 
-    session.WithCookieSecure(true),           
-    session.WithCookieHttpOnly(true),
-    session.WithCookieSameSite(http.SameSiteStrictMode),
-    session.WithCookiePath("/"),  
-    session.WithCookieDomain("example.com"),
-)
-cookie, err := session.NewCookie[T](opts)
-
-// Or using CookieOptions directly
-cookie, err := session.NewCookie[T](session.CookieOptions{
-    Name:     "my_cookie",
-    Secret:   session.Secret(key1, key2),
-    Duration: time.Hour * 24,
-    Secure:   true,
-    HttpOnly: true,                         
-    SameSite: http.SameSiteStrictMode,
-    Path:     "/",
-    Domain:   "example.com",
-})
-```
-
-## Flash Messages
-
-One-time messages that auto-delete after reading.
-
-**Features:**
-- Automatic deletion after being read once
-- Session cookies (expire when browser closes) by default
-- All cookie features (signing, encryption, etc.)
-
-```go
-// Or create flash cookie directly
-flash, err := session.NewFlashCookie[string](session.CookieOptions{
-    Name:   "flash_message",
-    Secret: session.Secret(key),
-})
-
-// Set flash message (on redirect)
-flash.Set(w, "Account created successfully!")
-http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
-
-// Get and delete flash message (on next page)
-message, err := flash.Get(w, r)
-// message is now deleted
-
-// Or peek without deleting
-message, err := flash.Peek(r)
-```
-
-## Advanced Usage
-
-### Token Stores
+#### Token Stores
 
 Token stores handle how session tokens are stored and retrieved from HTTP requests/responses.
 
 The package provides two built-in cookie-based token stores:
 
-#### CookieTokenStore (Default)
+##### CookieTokenStore (Default)
 
-Basic unsigned cookie storage that stores only the session ID. Requires database lookup on every request.
+Basic unsigned cookie storage that stores only the session ID. Requires lookup on every request.
 
 ```go
 tokenStore, err := session.NewCookieTokenStore(
@@ -302,14 +182,14 @@ auth, err := session.NewAuth(store,
 
 **Note:** If no token store is specified, `NewAuth` uses `CookieTokenStore` by default.
 
-#### TrustedCookieTokenStore (Optimistic)
+##### TrustedCookieTokenStore (Optimistic)
 
-Encrypted cookie storage that caches session and user data. Enables optimistic authentication without database lookups until the cache becomes stale.
+Encrypted cookie storage that caches session and user data. Enables optimistic authentication without lookups until the cache becomes stale.
 
 ```go
 secret := session.Secret([]byte("your-secret-key"))
 
-// Trust cached data for 15 minutes before database revalidation
+// Trust cached data for 15 minutes before session revalidation
 tokenStore, err := session.NewTrustedCookieTokenStore[Session, User](
     secret,
     time.Minute * 15, // Stale duration
@@ -324,17 +204,13 @@ auth, err := session.NewAuth(store,
 
 **How it works:**
 - On login: Session and user data are stored in a signed or encrypted cookie
-- On authentication: Data is read directly from the cookie (no database lookup)
-- After stale duration: Falls back to database validation and refreshes the cache
-- Cookie must be signed or encrypted for security (recommended: AES-256-GCM encryption)
+- On authentication: Data is read directly from the cookie
+- After stale duration: Falls back to session validation and refreshes the cache
+- Cookie must be signed or encrypted for security
 
-**Benefits:**
-- Reduces database load by avoiding session lookups on every request
-- Faster authentication (no database roundtrip)
-- Automatic cache refresh after stale duration
-- Still secure - falls back to database validation periodically
+**Security note:** When using trusted token stores, ensure the session's `SecretHash` field is never serialized to the client. Use the `json:"-"` tag to omit it from JSON encoding. The secret hash must remain in the database only
 
-#### Custom TokenStore
+##### Custom TokenStore
 
 Implement this interface for custom token storage (cookies, headers, etc.):
 
@@ -351,7 +227,7 @@ type TokenStore interface {
 }
 ```
 
-**Example - Header-based token store:**
+Example - Header-based token store
 
 ```go
 type HeaderTokenStore struct{}
@@ -374,7 +250,7 @@ func (s *HeaderTokenStore) DeleteToken(w http.ResponseWriter) {
 }
 ```
 
-#### Custom TrustedTokenStore
+##### Custom TrustedTokenStore
 
 Implement this interface to add optimistic validation with session/user caching (like JWT, signed tokens, etc.):
 
@@ -392,25 +268,7 @@ type TrustedTokenStore[S Session, U any] interface {
 }
 ```
 
-**Example - Using the built-in TrustedCookieTokenStore:**
-
-```go
-secret := session.Secret([]byte("your-secret-key"))
-
-// TrustedCookieTokenStore caches session/user data in encrypted cookies
-tokenStore, err := session.NewTrustedCookieTokenStore[Session, User](
-    secret,
-    time.Minute * 15, // Cache data for 15 minutes before database revalidation
-    session.WithCookieName("auth_session"),
-    session.WithCookieSecure(false) // For development only
-)
-
-auth, err := session.NewAuth(store,
-    session.WithTokenStore(tokenStore),
-)
-```
-
-**Example - Custom JWT-based trusted token store:**
+Example - JWT-based trusted token store:
 
 ```go
 type JWTTokenStore struct {
@@ -430,7 +288,8 @@ func (s *JWTTokenStore) SetToken(w http.ResponseWriter, token string, expiresAt 
 }
 
 func (s *JWTTokenStore) DeleteToken(w http.ResponseWriter) {
-    w.Header().Del("X-Session-Token")
+    // Signal client to clear the token
+    w.Header().Set("X-Session-Token", "")
 }
 
 func (s *JWTTokenStore) FromTrustedToken(token string) (Session, User, error) {
@@ -440,7 +299,7 @@ func (s *JWTTokenStore) FromTrustedToken(token string) (Session, User, error) {
         return Session{}, User{}, err
     }
 
-    // Check if JWT is expired - extract original session token for database validation
+    // Check if JWT is expired - extract original session token for fallback session validation
     if time.Now().After(claims.ExpiresAt) {
         return Session{}, User{}, &session.StaleSessionError{
             SessionToken: claims.SessionToken,
@@ -461,20 +320,15 @@ func (s *JWTTokenStore) ToTrustedToken(sessionToken string, sess Session, user U
     }
     return jwt.Sign(claims, s.signingKey)
 }
-
-// Use it
-auth, err := session.NewAuth(store,
-    session.WithTokenStore(&JWTTokenStore{signingKey: key}),
-)
 ```
 
 **Key points:**
 - `FromTrustedToken` receives the token from `GetToken()`
-- Return `*StaleSessionError` to trigger database revalidation when cache expires
+- Return `*StaleSessionError` to trigger session revalidation when cache expires
 - `ToTrustedToken` creates the trusted token that goes to `SetToken()`
 - The original session token should be embedded for fallback validation
 
-### Custom Session Refresh
+#### Custom Session Refresh
 
 By default, sessions are automatically refreshed when 50% of their duration has passed (e.g., a 30-day session refreshes after 15 days).
 
@@ -501,7 +355,7 @@ auth, err := session.NewAuth(store,
 )
 ```
 
-### Manual Session Management
+#### Manual Session Management
 
 ```go
 // Create session manually
@@ -517,12 +371,110 @@ auth.InvalidateSession(sessionId)
 auth.InvalidateAllSessions(user)
 ```
 
-## Security Features
+## Cookies
 
-- Session secrets are hashed with SHA-256 before storage
-- Cookie signing with HMAC-SHA256 prevents tampering
-- Optional AES-256-GCM encryption for sensitive cookie data
-- Constant-time secret comparison prevents timing attacks
-- Automatic session refresh to extend active sessions
-- Support for key rotation
-- Secure defaults for auth cookies (HttpOnly, Secure, SameSite)
+Type-safe cookie operations with signing and encryption support. Uses generic types for automatic JSON serialization of your data structures.
+
+### Unsigned Cookies
+
+Suitable for non-sensitive data like user preferences or UI settings. The data is stored as plain JSON and is readable by the client.
+
+```go
+// Create cookie (unsigned by default)
+cookie, err := session.NewCookie[UserData](session.CookieOptions{
+    Name:   "user_prefs",
+})
+
+// Set cookie
+userData := UserData{Theme: "dark", Lang: "en"}
+cookie.Set(w, userData)
+
+// Get cookie
+data, err := cookie.Get(r)
+
+// Delete cookie
+cookie.Delete(w)
+```
+
+### Signed Cookies
+
+Prevents tampering using HMAC-SHA256 signatures. The data is still readable by the client, but any modifications will invalidate the signature. Use this for data that needs integrity protection but doesn't need to be hidden.
+
+Supports key rotation by passing multiple secrets (the first key is used for signing, older keys are tried for verification).
+
+```go
+secret := session.Secret([]byte("your-secret-key"))
+
+// Create an signed cookie
+cookie, err := session.NewCookie[SensitiveData](session.CookieOptions{
+    Name:      "sensitive",
+    Secret:    secret,
+})
+```
+
+### Encrypted Cookies
+
+Encrypts data using AES-256-GCM, which both hides the content and prevents tampering. The data is completely hidden from the client. Use this for sensitive information that must remain confidential (e.g., tokens, personal data).
+
+Supports key rotation by passing multiple secrets (the first key is used for encryption, older keys are tried for decryption).
+
+```go
+secret := session.Secret([]byte("your-secret-key"))
+
+// Create an encrypted cookie
+cookie, err := session.NewCookie[SensitiveData](session.CookieOptions{
+    Name:      "sensitive",
+    Secret:    secret,
+    Encrypted: true,
+})
+```
+
+### Cookie Options
+
+```go
+// Using DefaultCookieOptions with custom options
+opts := session.DefaultCookieOptions("my_cookie",
+    session.WithCookieSecret(session.Secret(key1, key2)),
+    session.WithCookieDuration(time.Hour * 24),
+    session.WithCookieSecure(true),
+    session.WithCookieHttpOnly(true),
+    session.WithCookieSameSite(http.SameSiteStrictMode),
+    session.WithCookiePath("/"),
+    session.WithCookieDomain("example.com"),
+)
+cookie, err := session.NewCookie[T](opts)
+
+// Or using CookieOptions directly
+cookie, err := session.NewCookie[T](session.CookieOptions{
+    Name:     "my_cookie",
+    Secret:   session.Secret(key1, key2),
+    Duration: time.Hour * 24,
+    Secure:   true,
+    HttpOnly: true,
+    SameSite: http.SameSiteStrictMode,
+    Path:     "/",
+    Domain:   "example.com",
+})
+```
+
+## Flash Messages
+
+Temporary messages that are automatically deleted after being read once. Flash messages are stored as session cookies (expire when browser closes) by default and support all cookie features like signing and encryption.
+
+```go
+// Create flash cookie
+flash, err := session.NewFlashCookie[string](session.CookieOptions{
+    Name:   "flash_message",
+    Secret: session.Secret(key),
+})
+
+// Set flash message (on redirect)
+flash.Set(w, "Account created successfully!")
+http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+
+// Get and delete flash message (on next request)
+message, err := flash.Get(w, r)
+
+// Or peek without deleting
+message, err := flash.Peek(r)
+```

@@ -141,7 +141,7 @@ func TestAuth_CreateSession(t *testing.T) {
 		t.Error("session secret hash mismatch: hashing the secret from token should equal stored hash")
 	}
 
-	// Session should exist in database
+	// Session should exist in store
 	stored, ok := sessionStore.sessions[sessionId]
 	if !ok {
 		t.Fatal("session not found in store")
