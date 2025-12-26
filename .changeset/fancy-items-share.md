@@ -1,5 +1,0 @@
----
-"httpx": minor
----
-
-Initial release
