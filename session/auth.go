@@ -293,7 +293,7 @@ func (a *auth[S, U]) ValidateSessionToken(sessionToken string) (S, U, bool, erro
 	var session S
 	var user U
 
-	sessionId, sessionSecret, _ := strings.Cut(sessionToken, ".")
+	sessionId, sessionSecret := ParseSessionToken(sessionToken)
 	sessionSecretHash := hashSessionSecret(sessionSecret)
 
 	// Get session and user from storage
@@ -406,6 +406,13 @@ func (a *auth[S, U]) LogoutRequest(w http.ResponseWriter, r *http.Request) (S, U
 	a.DeleteSessionToken(w)
 
 	return session, user, nil
+}
+
+// ParseSessionToken splits a session token into its session ID and secret components.
+// Session tokens have the format: <session_id>.<session_secret>
+func ParseSessionToken(sessionToken string) (sessionId string, sessionSecret string) {
+	sessionId, sessionSecret, _ = strings.Cut(sessionToken, ".")
+	return
 }
 
 // hashSessionSecret hashes a session token with SHA-256.

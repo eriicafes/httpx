@@ -16,7 +16,7 @@ Session-based authentication following the [Lucia Auth guide](https://lucia-auth
 - Secure session token generation and validation
 - Generic types for session and user data
 - Automatic session refresh
-- Cookie-based token storage (default) or custom storage
+- Token store (default cookie store or custom)
 - Optimistic validation with cached sessions (optional)
 
 ### Basic Usage
@@ -91,7 +91,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
     // Validate credentials
     user := authenticateUser(r)
 
-    // Create session and set cookie
+    // LoginRequest creates a new session and sets the session token in the response
     session, err := auth.LoginRequest(w, user)
     if err != nil {
         http.Error(w, "Login failed", http.StatusInternalServerError)
@@ -106,6 +106,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 ```go
 func protectedHandler(w http.ResponseWriter, r *http.Request) {
+    // AuthenticateRequest gets the session token from request, validates it, and returns session and user
+    // Automatically refreshes the session and updates the token in the response
     session, user, err := auth.AuthenticateRequest(w, r)
     if err != nil {
         http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -121,6 +123,7 @@ func protectedHandler(w http.ResponseWriter, r *http.Request) {
 
 ```go
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
+    // LogoutRequest gets the session token from request, validates it, deletes the session, and removes the token
     session, user, err := auth.LogoutRequest(w, r)
     if err != nil {
         http.Error(w, "Logout failed", http.StatusInternalServerError)
@@ -129,6 +132,36 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
     fmt.Fprintf(w, "Logged out successfully")
 }
+```
+
+### Session Management
+
+For custom flows, use the manual session methods below. The `LoginRequest`, `AuthenticateRequest`, and `LogoutRequest` methods shown above are convenience helpers that combine these operations.
+
+```go
+// Login flow
+sessionToken, session, err := auth.CreateSession(user)
+err = auth.SetSessionToken(w, sessionToken, session, user)
+
+// Authentication flow
+sessionToken, err := auth.GetSessionToken(r)
+session, user, optimistic, err := auth.ValidateSessionToken(sessionToken)
+// Update token store if not optimistic
+if !optimistic {
+    err = auth.SetSessionToken(w, sessionToken, session, user)
+}
+
+// Logout flow - single session
+sessionToken, err := auth.GetSessionToken(r)
+sessionId, _ := session.ParseSessionToken(sessionToken)
+auth.InvalidateSession(sessionId)
+auth.DeleteSessionToken(w)
+
+// Logout flow - all user sessions (e.g., "logout from all devices")
+sessionToken, err := auth.GetSessionToken(r)
+session, user, _, err := auth.ValidateSessionToken(sessionToken)
+auth.InvalidateAllSessions(user)
+auth.DeleteSessionToken(w)
 ```
 
 ### CSRF Protection
@@ -328,48 +361,27 @@ func (s *JWTTokenStore) ToTrustedToken(sessionToken string, sess Session, user U
 - `ToTrustedToken` creates the trusted token that goes to `SetToken()`
 - The original session token should be embedded for fallback validation
 
-#### Custom Session Refresh
+#### Key Rotation
 
-By default, sessions are automatically refreshed when 50% of their duration has passed (e.g., a 30-day session refreshes after 15 days).
+Support for rotating encryption/signing keys without invalidating existing sessions. Pass multiple secrets when creating token stores - the first key is used for new operations, older keys are tried for validation.
 
-**Disable automatic refresh:**
 ```go
-// Disable session refresh completely
+oldSecret := []byte("old-secret-key")
+newSecret := []byte("new-secret-key")
+
+// Use multiple secrets for key rotation
+tokenStore, err := session.NewTrustedCookieTokenStore[Session, User](
+    session.Secret(newSecret, oldSecret), // New key first, old keys follow
+    time.Minute * 15,
+    session.WithCookieName("auth_session"),
+)
+
 auth, err := session.NewAuth(store,
-    session.WithRefreshThreshold(nil),
+    session.WithTokenStore(tokenStore),
 )
 ```
 
-**Custom refresh threshold:**
-```go
-// Refresh when 75% of duration has passed
-customRefresh := func(expiresAt time.Time, duration time.Duration) (time.Time, bool) {
-    if time.Until(expiresAt) < duration/4 {
-        return time.Now().Add(duration), true
-    }
-    return time.Time{}, false
-}
-
-auth, err := session.NewAuth(store,
-    session.WithRefreshThreshold(customRefresh),
-)
-```
-
-#### Manual Session Management
-
-```go
-// Create session manually
-sessionToken, session, err := auth.CreateSession(user)
-
-// Validate session token manually
-session, user, optimistic, err := auth.ValidateSessionToken(sessionToken)
-
-// Invalidate single session
-auth.InvalidateSession(sessionId)
-
-// Invalidate all user sessions
-auth.InvalidateAllSessions(user)
-```
+This allows seamless key rotation: new sessions use the new key, while existing sessions with the old key remain valid.
 
 ## Cookies
 
