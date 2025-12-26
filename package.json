@@ -7,6 +7,6 @@
   "author": "Eric Afes <eriicafes@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "@changesets/cli": "^2.27.12"
+    "@changesets/cli": "^2.29.8"
   }
 }
