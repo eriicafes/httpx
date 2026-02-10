@@ -11,7 +11,6 @@ import (
 // HTTPError represents an error that can be returned as an HTTP response.
 type HTTPError interface {
 	error
-	ErrorData
 
 	// Message returns the user-facing error message.
 	Message() string
@@ -19,9 +18,7 @@ type HTTPError interface {
 	// StatusCode returns the HTTP status code for this error.
 	StatusCode() int
 
-	// HTTPError returns the message, status code, and data with defaults for empty values.
-	// The returned data map is always non-nil and includes an "error" field containing the message.
-	HTTPError() (message string, statusCode int, data map[string]any)
+	ErrorData
 }
 
 // ErrorData provides a method to retrieve additional metadata about an error.
@@ -101,24 +98,6 @@ func (e *httpError) Unwrap() error             { return e.err }
 func (e *httpError) Message() string           { return e.message }
 func (e *httpError) StatusCode() int           { return e.statusCode }
 func (e *httpError) ErrorData() map[string]any { return e.data }
-
-func (e *httpError) HTTPError() (message string, statusCode int, data map[string]any) {
-	message = e.message
-	statusCode = e.statusCode
-	data = e.data
-
-	if message == "" {
-		message = "Something went wrong"
-	}
-	if statusCode == 0 {
-		statusCode = http.StatusInternalServerError
-	}
-	if data == nil {
-		data = make(map[string]any)
-	}
-	data["error"] = message
-	return
-}
 
 // New creates a new HTTPError with the given message, status code, and additional data.
 //
@@ -205,4 +184,70 @@ func mergeErrorData(data []ErrorData) map[string]any {
 		maps.Copy(base, src)
 	}
 	return base
+}
+
+// Parse returns the message, status code, and data with defaults for empty values.
+// The returned data map is always non-nil and includes an "error" field containing the message,
+// without overriding any existing "error" field.
+//
+// This function is intended for use in application code where an error response needs to be sent.
+// It accepts any error (HTTPError or standard error) and returns usable values for an HTTP response.
+//
+// Examples:
+//
+// Using with an HTTPError:
+//
+//	err := httperrors.New("Invalid email", http.StatusBadRequest, httperrors.Details{
+//		"email": "must be a valid email address",
+//	})
+//	message, status, data := httperrors.Parse(err)
+//	// message: "Invalid email"
+//	// status: 400
+//	// data: {"error": "Invalid email", "details": {"email": "must be a valid email address"}}
+//
+// Using with a standard error:
+//
+//	err := errors.New("database connection failed")
+//	message, status, data := httperrors.Parse(err)
+//	// message: "Something went wrong"
+//	// status: 500
+//	// data: {"error": "Something went wrong"}
+//
+// Sending a JSON error response:
+//
+//	if err != nil {
+//		message, status, data := httperrors.Parse(err)
+//		w.WriteHeader(status)
+//		json.NewEncoder(w).Encode(data)
+//		return
+//	}
+//
+// Custom error field preservation:
+//
+//	err := httperrors.New("Operation failed", http.StatusBadRequest, httperrors.Fields{
+//		"error": map[string]any{"code": "CUSTOM_ERROR", "message": "Custom error format"},
+//	})
+//	_, _, data := httperrors.Parse(err)
+//	// data: {"error": {"code": "CUSTOM_ERROR", "message": "Custom error format"}}
+//	// The existing "error" field is preserved, not overridden
+func Parse(e error) (message string, statusCode int, data map[string]any) {
+	if herr, ok := e.(HTTPError); ok {
+		message = herr.Message()
+		statusCode = herr.StatusCode()
+		data = herr.ErrorData()
+	}
+
+	if message == "" {
+		message = "Something went wrong"
+	}
+	if statusCode == 0 {
+		statusCode = http.StatusInternalServerError
+	}
+	if data == nil {
+		data = make(map[string]any)
+	}
+	if data["error"] == nil {
+		data["error"] = message
+	}
+	return
 }

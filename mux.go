@@ -190,8 +190,7 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 
 	// Handle HTTPError
 	if httpErr, ok := httperrors.Unwrap(err); ok {
-		_, statusCode, data := httpErr.HTTPError()
-
+		_, statusCode, data := httperrors.Parse(httpErr)
 		w.WriteHeader(statusCode)
 		json.NewEncoder(w).Encode(data)
 		return

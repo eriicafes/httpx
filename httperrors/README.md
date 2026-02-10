@@ -14,6 +14,7 @@ go get github.com/eriicafes/httpx
 - **Error Metadata** - Include structured metadata using `Code`, `Details`, or custom `Fields`
 - **Error Wrapping** - Wrap existing errors while preserving the error chain
 - **Error Unwrapping** - Extract HTTPError from any error chain
+- **Convenient Parsing** - Parse any error into usable HTTP response values with sensible defaults
 
 ## Usage
 
@@ -109,24 +110,69 @@ httpErr, ok := httperrors.Unwrap(wrappedErr) // Returns base error
 
 ### Accessing Error Information
 
-Access individual fields or get all information at once with automatic defaults for empty values.
+Access individual fields from HTTPError or parse any error for use in HTTP responses.
 
 ```go
 err := httperrors.New("Invalid input", http.StatusBadRequest, httperrors.Details{
     "email": "invalid format",
 })
 
-// Access individual fields
+// Access individual fields from HTTPError
 message := err.Message()       // "Invalid input"
 statusCode := err.StatusCode() // 400
 data := err.ErrorData()        // map[string]any{"details": Details{"email": "invalid format"}}
 
-// Get everything with defaults
-message, statusCode, data := err.HTTPError()
-// Returns defaults for empty values:
+// Parse any error for HTTP responses (works with HTTPError or standard errors)
+message, statusCode, data := httperrors.Parse(err)
+// Returns usable values with defaults:
 // - message: "Something went wrong" if empty
 // - statusCode: 500 if zero
-// - data: includes "error" field with the message
+// - data: always non-nil, includes "error" field with the message
+//   (without overriding any existing "error" field)
+```
+
+### Sending Error Responses
+
+Use `Parse` to convert any error into a usable HTTP response. This is the recommended approach in application code.
+
+```go
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+    if err := someOperation(); err != nil {
+        message, status, data := httperrors.Parse(err)
+        w.WriteHeader(status)
+        json.NewEncoder(w).Encode(data)
+        log.Printf("Error: %s (status %d)", message, status)
+        return
+    }
+    // ... success response
+}
+
+// Response for HTTPError:
+// {
+//   "error": "Invalid input",
+//   "details": {"email": "invalid format"}
+// }
+
+// Response for standard error:
+// {
+//   "error": "Something went wrong"
+// }
+```
+
+### Custom Error Field
+
+If you need a custom error format, provide an "error" field in your data. `Parse` will preserve it and not override it.
+
+```go
+err := httperrors.New("Operation failed", http.StatusBadRequest, httperrors.Fields{
+    "error": map[string]any{
+        "code":    "CUSTOM_ERROR",
+        "message": "Custom error format",
+    },
+})
+
+_, _, data := httperrors.Parse(err)
+// data: {"error": {"code": "CUSTOM_ERROR", "message": "Custom error format"}}
 ```
 
 ## Error Data
@@ -200,7 +246,6 @@ type HTTPError interface {
     ErrorData
     Message() string
     StatusCode() int
-    HTTPError() (message string, statusCode int, data map[string]any)
 }
 
 type ErrorData interface {
@@ -215,4 +260,5 @@ func New(message string, statusCode int, data ...ErrorData) HTTPError
 func Report(err error, statusCode int, data ...ErrorData) HTTPError
 func Wrap(err error, message string, statusCode int, data ...ErrorData) HTTPError
 func Unwrap(err error) (HTTPError, bool)
+func Parse(err error) (message string, statusCode int, data map[string]any)
 ```

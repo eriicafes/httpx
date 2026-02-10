@@ -369,11 +369,11 @@ func TestUnwrap(t *testing.T) {
 	})
 }
 
-func TestHTTPError(t *testing.T) {
-	t.Run("with all values", func(t *testing.T) {
+func TestParse(t *testing.T) {
+	t.Run("HTTPError with all values", func(t *testing.T) {
 		details := Details{"field": "error"}
 		err := New("Test message", http.StatusBadRequest, details)
-		message, statusCode, data := err.HTTPError()
+		message, statusCode, data := Parse(err)
 
 		if message != "Test message" {
 			t.Errorf("expected message 'Test message', got '%s'", message)
@@ -393,9 +393,9 @@ func TestHTTPError(t *testing.T) {
 		}
 	})
 
-	t.Run("with empty message", func(t *testing.T) {
+	t.Run("HTTPError with empty message uses default", func(t *testing.T) {
 		err := New("", http.StatusBadRequest)
-		message, statusCode, _ := err.HTTPError()
+		message, statusCode, _ := Parse(err)
 
 		if message != "Something went wrong" {
 			t.Errorf("expected default message 'Something went wrong', got '%s'", message)
@@ -405,9 +405,9 @@ func TestHTTPError(t *testing.T) {
 		}
 	})
 
-	t.Run("with zero status code", func(t *testing.T) {
+	t.Run("HTTPError with zero status code uses default", func(t *testing.T) {
 		err := New("Test", 0)
-		message, statusCode, _ := err.HTTPError()
+		message, statusCode, _ := Parse(err)
 
 		if message != "Test" {
 			t.Errorf("expected message 'Test', got '%s'", message)
@@ -417,9 +417,9 @@ func TestHTTPError(t *testing.T) {
 		}
 	})
 
-	t.Run("with nil data adds error field", func(t *testing.T) {
+	t.Run("HTTPError with nil data adds error field", func(t *testing.T) {
 		err := New("Test error", http.StatusBadRequest)
-		message, statusCode, data := err.HTTPError()
+		message, statusCode, data := Parse(err)
 
 		if message != "Test error" {
 			t.Errorf("expected message 'Test error', got '%s'", message)
@@ -432,6 +432,81 @@ func TestHTTPError(t *testing.T) {
 		}
 		if data["error"] != "Test error" {
 			t.Errorf("expected error field with message, got %v", data["error"])
+		}
+	})
+
+	t.Run("standard error uses defaults", func(t *testing.T) {
+		err := errors.New("standard error")
+		message, statusCode, data := Parse(err)
+
+		if message != "Something went wrong" {
+			t.Errorf("expected default message 'Something went wrong', got '%s'", message)
+		}
+		if statusCode != http.StatusInternalServerError {
+			t.Errorf("expected default status code %d, got %d", http.StatusInternalServerError, statusCode)
+		}
+		if data == nil {
+			t.Fatal("expected data map to be created, got nil")
+		}
+		if data["error"] != "Something went wrong" {
+			t.Errorf("expected error field with default message, got %v", data["error"])
+		}
+	})
+
+	t.Run("does not override existing error field", func(t *testing.T) {
+		fields := Fields{"error": "Custom error message"}
+		err := New("Test message", http.StatusBadRequest, fields)
+		message, statusCode, data := Parse(err)
+
+		if message != "Test message" {
+			t.Errorf("expected message 'Test message', got '%s'", message)
+		}
+		if statusCode != http.StatusBadRequest {
+			t.Errorf("expected status code %d, got %d", http.StatusBadRequest, statusCode)
+		}
+		if data["error"] != "Custom error message" {
+			t.Errorf("expected error field to preserve custom value 'Custom error message', got %v", data["error"])
+		}
+	})
+
+	t.Run("adds error field when error key exists but is nil", func(t *testing.T) {
+		fields := Fields{"error": nil}
+		err := New("Test message", http.StatusBadRequest, fields)
+		_, _, data := Parse(err)
+
+		if data["error"] != "Test message" {
+			t.Errorf("expected error field to be set to message when nil, got %v", data["error"])
+		}
+	})
+
+	t.Run("preserves other fields when adding error field", func(t *testing.T) {
+		fields := Fields{
+			"request_id": "req-123",
+			"trace_id":   "trace-456",
+		}
+		details := Details{"field": "validation error"}
+		code := Code("VALIDATION_ERROR")
+		err := New("Validation failed", http.StatusBadRequest, code, details, fields)
+		_, _, data := Parse(err)
+
+		if data["error"] != "Validation failed" {
+			t.Errorf("expected error field to be added, got %v", data["error"])
+		}
+		if data["request_id"] != "req-123" {
+			t.Errorf("expected request_id to be preserved, got %v", data["request_id"])
+		}
+		if data["trace_id"] != "trace-456" {
+			t.Errorf("expected trace_id to be preserved, got %v", data["trace_id"])
+		}
+		if data["code"] != code {
+			t.Errorf("expected code to be preserved, got %v", data["code"])
+		}
+		detailsMap, ok := data["details"].(Details)
+		if !ok {
+			t.Fatalf("expected details in data, got %v", data)
+		}
+		if detailsMap["field"] != "validation error" {
+			t.Errorf("expected details to be preserved, got %v", detailsMap)
 		}
 	})
 }
