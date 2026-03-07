@@ -398,8 +398,13 @@ func UnevaluatedProperties[T any]() Option {
 // OneOf requires the value to be valid against exactly one of the given schemas.
 // Pass zero values of the desired types (e.g. OneOf(TypeA{}, TypeB{})).
 // If a union.Union or union.TaggedUnion value is passed, its cases are expanded inline.
+//
+// If called with no arguments, it is a no-op (s.OneOf is already the union default).
 func OneOf(types ...any) Option {
 	return func(s *base.Schema, _ *RegistryField) {
+		if len(types) == 0 {
+			return
+		}
 		var schemas []*base.SchemaProxy
 		for _, t := range types {
 			rt := reflect.TypeOf(t)
@@ -419,8 +424,16 @@ func OneOf(types ...any) Option {
 // AnyOf requires the value to be valid against at least one of the given schemas.
 // Pass zero values of the desired types (e.g. AnyOf(TypeA{}, TypeB{})).
 // If a union.Union or union.TaggedUnion value is passed, its cases are expanded inline.
+//
+// If called with no arguments, the schemas are inferred from s.OneOf (set by union type
+// reflection) and moved to s.AnyOf, replacing s.OneOf.
 func AnyOf(types ...any) Option {
 	return func(s *base.Schema, _ *RegistryField) {
+		if len(types) == 0 {
+			s.AnyOf = s.OneOf
+			s.OneOf = nil
+			return
+		}
 		var schemas []*base.SchemaProxy
 		for _, t := range types {
 			rt := reflect.TypeOf(t)
@@ -440,8 +453,16 @@ func AnyOf(types ...any) Option {
 // AllOf requires the value to be valid against all of the given schemas.
 // Pass zero values of the desired types (e.g. AllOf(MyStruct{}, OtherStruct{})).
 // If a union.Union or union.TaggedUnion value is passed, its cases are expanded inline.
+//
+// If called with no arguments, the schemas are inferred from s.OneOf (set by union type
+// reflection) and moved to s.AllOf, replacing s.OneOf.
 func AllOf(types ...any) Option {
 	return func(s *base.Schema, _ *RegistryField) {
+		if len(types) == 0 {
+			s.AllOf = s.OneOf
+			s.OneOf = nil
+			return
+		}
 		var schemas []*base.SchemaProxy
 		for _, t := range types {
 			rt := reflect.TypeOf(t)
