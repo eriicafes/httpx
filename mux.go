@@ -78,6 +78,7 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -201,7 +202,7 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	var internalErr *internalError
 	if errors.As(err, &internalErr) {
 		// Log underlying error for internal errors
-		log.Printf("[ERROR] %s %s: %v", r.Method, r.URL.Path, internalErr.err.Error())
+		log.Printf("[ERROR] %s %s: %v", r.Method, r.URL.Path, fmt.Sprintf("%s: %s", internalErr.message, internalErr.err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
@@ -219,7 +220,7 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 //
 //	user, err := getUser(id)
 //	if err != nil {
-//	    // Logs: "[ERROR] GET /api/users/123: sql: no rows in result set"
+//	    // Logs: "[ERROR] GET /api/users/123: Failed to retrieve user: sql: no rows in result set"
 //	    // Returns to client: {"error": "Failed to retrieve user"}
 //	    return httpx.InternalError(err, "Failed to retrieve user")
 //	}

@@ -225,13 +225,10 @@ func TestInternalError(t *testing.T) {
 }
 
 func TestMuxErrorHandler(t *testing.T) {
-	baseMux := http.NewServeMux()
-	customHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	mux := Fallback(http.NewServeMux(), func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusTeapot)
 		w.Write([]byte("custom error"))
 	})
-	mux := Fallback(baseMux, customHandler)
-
 	handler := MuxErrorHandler(mux)
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -248,19 +245,15 @@ func TestMuxErrorHandler(t *testing.T) {
 	}
 }
 
-func TestApplyMuxErrorHandler(t *testing.T) {
-	baseMux := http.NewServeMux()
-
-	handler := func(w http.ResponseWriter, r *http.Request) error {
+func TestHandler(t *testing.T) {
+	handler := Handler(http.NewServeMux(), func(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("handler error")
-	}
-
-	wrappedHandler := Handler(baseMux, handler)
+	})
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
 
-	wrappedHandler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)

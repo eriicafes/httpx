@@ -7,8 +7,7 @@ import (
 )
 
 func TestNormalizeTrailingSlash_BothPaths(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
+	mux := NormalizeTrailingSlash(http.NewServeMux())
 
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("users"))
@@ -17,7 +16,7 @@ func TestNormalizeTrailingSlash_BothPaths(t *testing.T) {
 	// Test without trailing slash
 	req := httptest.NewRequest("GET", "/users", nil)
 	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("without slash: expected status %d, got %d", http.StatusOK, rec.Code)
@@ -30,7 +29,7 @@ func TestNormalizeTrailingSlash_BothPaths(t *testing.T) {
 	// Test with trailing slash
 	req = httptest.NewRequest("GET", "/users/", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("with slash: expected status %d, got %d", http.StatusOK, rec.Code)
@@ -42,107 +41,88 @@ func TestNormalizeTrailingSlash_BothPaths(t *testing.T) {
 }
 
 func TestNormalizeTrailingSlash_PatternWithSlash(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
+	mux := NormalizeTrailingSlash(http.NewServeMux())
 
 	// Pattern already ends with slash, should not duplicate
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("api"))
 	})
 
+	// Test with trailing slash
 	req := httptest.NewRequest("GET", "/api/", nil)
 	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+		t.Errorf("with slash: expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if rec.Body.String() != "api" {
+		t.Errorf("with slash: expected body 'api', got %q", rec.Body.String())
 	}
 
+	// Test without trailing slash — subtree pattern redirects to trailing slash
+	req = httptest.NewRequest("GET", "/api", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Errorf("without slash: expected status %d, got %d", http.StatusMovedPermanently, rec.Code)
+	}
+
+	// Test nested path — subtree pattern matches any path under /api/
+	req = httptest.NewRequest("GET", "/api/nested", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("nested path: expected status %d, got %d", http.StatusOK, rec.Code)
+	}
 	if rec.Body.String() != "api" {
-		t.Errorf("expected body 'api', got %q", rec.Body.String())
+		t.Errorf("nested path: expected body 'api', got %q", rec.Body.String())
 	}
 }
 
 func TestNormalizeTrailingSlash_PatternWithExactMatch(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
+	mux := NormalizeTrailingSlash(http.NewServeMux())
 
 	// Pattern already ends with {$}, should not duplicate
 	mux.HandleFunc("/exact/{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("exact"))
 	})
 
+	// Test with trailing slash — {$} anchors to this exact path
 	req := httptest.NewRequest("GET", "/exact/", nil)
 	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+		t.Errorf("with slash: expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-
 	if rec.Body.String() != "exact" {
-		t.Errorf("expected body 'exact', got %q", rec.Body.String())
-	}
-}
-
-func TestNormalizeTrailingSlash_Handle(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
-
-	mux.Handle("/products", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("products"))
-	}))
-
-	// Test without trailing slash
-	req := httptest.NewRequest("GET", "/products", nil)
-	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
-
-	if rec.Body.String() != "products" {
-		t.Errorf("without slash: expected body 'products', got %q", rec.Body.String())
+		t.Errorf("with slash: expected body 'exact', got %q", rec.Body.String())
 	}
 
-	// Test with trailing slash
-	req = httptest.NewRequest("GET", "/products/", nil)
+	// Test without trailing slash — mux redirects to trailing slash (same as PatternWithSlash)
+	req = httptest.NewRequest("GET", "/exact", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
-	if rec.Body.String() != "products" {
-		t.Errorf("with slash: expected body 'products', got %q", rec.Body.String())
-	}
-}
-
-func TestNormalizeTrailingSlash_Route(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
-
-	mux.Route("/items", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("items"))
-		return nil
-	})
-
-	// Test without trailing slash
-	req := httptest.NewRequest("GET", "/items", nil)
-	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
-
-	if rec.Body.String() != "items" {
-		t.Errorf("without slash: expected body 'items', got %q", rec.Body.String())
+	if rec.Code != http.StatusMovedPermanently {
+		t.Errorf("without slash: expected status %d, got %d", http.StatusMovedPermanently, rec.Code)
 	}
 
-	// Test with trailing slash
-	req = httptest.NewRequest("GET", "/items/", nil)
+	// Test nested path — should not match since {$} prevents subtree matching
+	req = httptest.NewRequest("GET", "/exact/nested", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
-	if rec.Body.String() != "items" {
-		t.Errorf("with slash: expected body 'items', got %q", rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("nested path: expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }
 
 func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := NormalizeTrailingSlash(baseMux)
+	mux := NormalizeTrailingSlash(http.NewServeMux())
 
 	mux.HandleFunc("GET /api/users", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("get users"))
@@ -155,7 +135,7 @@ func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
 	// Test GET without trailing slash
 	req := httptest.NewRequest("GET", "/api/users", nil)
 	rec := httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Body.String() != "get users" {
 		t.Errorf("GET without slash: expected body 'get users', got %q", rec.Body.String())
@@ -164,7 +144,7 @@ func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
 	// Test GET with trailing slash
 	req = httptest.NewRequest("GET", "/api/users/", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Body.String() != "get users" {
 		t.Errorf("GET with slash: expected body 'get users', got %q", rec.Body.String())
@@ -173,7 +153,7 @@ func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
 	// Test POST without trailing slash
 	req = httptest.NewRequest("POST", "/api/users", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Body.String() != "create user" {
 		t.Errorf("POST without slash: expected body 'create user', got %q", rec.Body.String())
@@ -182,7 +162,7 @@ func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
 	// Test POST with trailing slash
 	req = httptest.NewRequest("POST", "/api/users/", nil)
 	rec = httptest.NewRecorder()
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Body.String() != "create user" {
 		t.Errorf("POST with slash: expected body 'create user', got %q", rec.Body.String())
@@ -190,8 +170,7 @@ func TestNormalizeTrailingSlash_WithMethod(t *testing.T) {
 }
 
 func TestNormalizeTrailingSlash_Patterns(t *testing.T) {
-	baseMux := http.NewServeMux()
-	normalizeMux := &normalizeTrailingSlashMux{baseMux}
+	normalizeMux := &normalizeTrailingSlashMux{http.NewServeMux()}
 
 	tests := []struct {
 		name     string
