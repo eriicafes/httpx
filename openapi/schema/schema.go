@@ -21,18 +21,13 @@ func ReflectType(t reflect.Type, registry *Registry) *base.SchemaProxy {
 }
 
 func reflectType(t reflect.Type, visited map[reflect.Type]bool, registry *Registry) *base.SchemaProxy {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
 	return registry.Get(t, func(rf *RegistryField) *base.SchemaProxy {
-		// TODO: t can no longer be pointer type so nullable check never runs
-		s := schemaFromType(t, visited, registry)
+		elem, s := schemaFromType(t, visited, registry)
 		proxy := base.CreateSchemaProxy(s)
 
 		// Interface types cannot be allocated; skip the SchemaOption check for them.
-		if t.Kind() != reflect.Interface {
-			v := reflect.New(t)
+		if elem.Kind() != reflect.Interface {
+			v := reflect.New(elem)
 			if sc, ok := v.Elem().Interface().(SchemaOption); ok {
 				sc.Schema()(s, rf)
 			} else if sc, ok := v.Interface().(SchemaOption); ok {
@@ -46,29 +41,33 @@ func reflectType(t reflect.Type, visited map[reflect.Type]bool, registry *Regist
 
 // SchemaFromType builds a base.Schema from a reflect.Type without registry support.
 func SchemaFromType(t reflect.Type) *base.Schema {
-	return schemaFromType(t, make(map[reflect.Type]bool), nil)
+	_, s := schemaFromType(t, make(map[reflect.Type]bool), nil)
+	return s
 }
 
-func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Registry) *base.Schema {
+// schemaFromType returns the base (non-pointer) type and the JSON Schema for t.
+// For pointer types it sets nullable on the element's schema and returns the
+// underlying base type so callers can use it without re-dereferencing.
+func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Registry) (reflect.Type, *base.Schema) {
 	if t.Kind() == reflect.Pointer {
-		s := schemaFromType(t.Elem(), visited, registry)
+		underlying, s := schemaFromType(t.Elem(), visited, registry)
 		nullable := true
 		s.Nullable = &nullable
-		return s
+		return underlying, s
 	}
 
 	switch t.Kind() {
 	case reflect.String:
-		return &base.Schema{Type: []string{"string"}}
+		return t, &base.Schema{Type: []string{"string"}}
 	case reflect.Bool:
-		return &base.Schema{Type: []string{"boolean"}}
+		return t, &base.Schema{Type: []string{"boolean"}}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &base.Schema{Type: []string{"integer"}}
+		return t, &base.Schema{Type: []string{"integer"}}
 	case reflect.Float32, reflect.Float64:
-		return &base.Schema{Type: []string{"number"}}
+		return t, &base.Schema{Type: []string{"number"}}
 	case reflect.Slice, reflect.Array:
-		return &base.Schema{
+		return t, &base.Schema{
 			Type: []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{
 				N: 0,
@@ -76,7 +75,7 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 			},
 		}
 	case reflect.Map:
-		return &base.Schema{
+		return t, &base.Schema{
 			Type: []string{"object"},
 			AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
 				N: 0,
@@ -90,12 +89,12 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 			if info.discriminator != nil {
 				s.Discriminator = info.discriminator
 			}
-			return s
+			return t, s
 		}
 
 		// special case time.Time
 		if t.PkgPath() == "time" && t.Name() == "Time" {
-			return &base.Schema{
+			return t, &base.Schema{
 				Type:   []string{"string"},
 				Format: "date-time",
 			}
@@ -103,7 +102,7 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 
 		// Guard against self-referential types (e.g. type Node struct { Next *Node }).
 		if visited[t] {
-			return &base.Schema{}
+			return t, &base.Schema{}
 		}
 		visited[t] = true
 
@@ -130,7 +129,7 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 				required = append(required, name)
 			}
 		}
-		return &base.Schema{
+		return t, &base.Schema{
 			Type:       []string{"object"},
 			Properties: props,
 			Required:   required,
@@ -141,6 +140,6 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 		}
 	default:
 		// Unsupported types (Interface, Chan, Func, Complex, etc.) fall back to an unconstrained schema.
-		return &base.Schema{}
+		return t, &base.Schema{}
 	}
 }

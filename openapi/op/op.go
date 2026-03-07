@@ -157,7 +157,9 @@ func CookieParam[T any](name string, opts ...param.Option) Option {
 // RequestBody sets the request body for the operation.
 func RequestBody[T any](opts ...body.Option) Option {
 	return func(operation *v3.Operation, registry *schema.Registry) {
+		required := true
 		b := &v3.RequestBody{
+			Required: &required,
 			Content: orderedmap.FromPairs(
 				orderedmap.NewPair("application/json", &v3.MediaType{
 					Schema: schema.ReflectType(reflect.TypeFor[T](), registry),

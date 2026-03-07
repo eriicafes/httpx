@@ -43,6 +43,9 @@ func (r *Registry) Get(t reflect.Type, build func(*RegistryField) *base.SchemaPr
 	if r == nil {
 		return build(f)
 	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
 	if f, ok := r.fields[t]; ok {
 		return base.CreateSchemaProxyRef(f.Reference)
 	}

@@ -280,18 +280,16 @@ func PrefixItems(types ...any) Option {
 }
 
 // Contains sets the schema that at least one item in the array must validate against (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. Contains(MyStruct{})).
-func Contains(t any) Option {
+func Contains[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.Contains = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.Contains = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
 // UnevaluatedItems sets the schema for array items not covered by items or prefixItems (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. UnevaluatedItems(MyStruct{})).
-func UnevaluatedItems(t any) Option {
+func UnevaluatedItems[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.UnevaluatedItems = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.UnevaluatedItems = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
@@ -353,6 +351,14 @@ func PatternProperties(pattern string, opts ...Option) Option {
 	}
 }
 
+// Required overrides the required property list for an object schema.
+// By default, non-pointer struct fields are required and pointer fields are optional.
+func Required(fields ...string) Option {
+	return func(s *base.Schema, _ *RegistryField) {
+		s.Required = fields
+	}
+}
+
 // DependentRequired specifies properties that are required when the named property is present (OpenAPI 3.1).
 func DependentRequired(property string, required ...string) Option {
 	return func(s *base.Schema, _ *RegistryField) {
@@ -364,21 +370,19 @@ func DependentRequired(property string, required ...string) Option {
 }
 
 // DependentSchemas sets the schema that must validate when the named property is present (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. DependentSchemas("flag", Extra{})).
-func DependentSchemas(property string, t any) Option {
+func DependentSchemas[T any](property string) Option {
 	return func(s *base.Schema, _ *RegistryField) {
 		if s.DependentSchemas == nil {
 			s.DependentSchemas = orderedmap.New[string, *base.SchemaProxy]()
 		}
-		s.DependentSchemas.Set(property, base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t))))
+		s.DependentSchemas.Set(property, base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]())))
 	}
 }
 
 // PropertyNames sets constraints on the names of object properties (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. PropertyNames("")).
-func PropertyNames(t any) Option {
+func PropertyNames[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.PropertyNames = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.PropertyNames = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
@@ -480,36 +484,32 @@ func AllOf(types ...any) Option {
 }
 
 // Not requires the value to be invalid against the given schema.
-// Pass a zero value of the desired type (e.g. Not(MyStruct{})).
-func Not(t any) Option {
+func Not[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.Not = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.Not = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
 // conditionals
 
 // If sets the conditional schema — if this validates, Then is applied; otherwise Else is applied (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. If(MyStruct{})).
-func If(t any) Option {
+func If[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.If = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.If = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
 // Then sets the schema applied when If validates (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. Then(MyStruct{})).
-func Then(t any) Option {
+func Then[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.Then = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.Then = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 
 // Else sets the schema applied when If does not validate (OpenAPI 3.1).
-// Pass a zero value of the desired type (e.g. Else(MyStruct{})).
-func Else(t any) Option {
+func Else[T any]() Option {
 	return func(s *base.Schema, _ *RegistryField) {
-		s.Else = base.CreateSchemaProxy(SchemaFromType(reflect.TypeOf(t)))
+		s.Else = base.CreateSchemaProxy(SchemaFromType(reflect.TypeFor[T]()))
 	}
 }
 

@@ -17,11 +17,10 @@ func Description(s string) Option {
 	}
 }
 
-// Required marks the parameter as required. Default: false.
-func Required() Option {
-	required := true
+// Required sets whether the parameter is required. Default: false.
+func Required(v bool) Option {
 	return func(p *v3.Parameter) {
-		p.Required = &required
+		p.Required = &v
 	}
 }
 
