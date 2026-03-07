@@ -17,10 +17,10 @@ func Description(s string) Option {
 	}
 }
 
-// Required marks the header as required. Default: false.
-func Required() Option {
+// Required sets whether the header is required. Default: false.
+func Required(v bool) Option {
 	return func(h *v3.Header) {
-		h.Required = true
+		h.Required = v
 	}
 }
 

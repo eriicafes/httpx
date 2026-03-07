@@ -18,11 +18,10 @@ func Description(s string) Option {
 	}
 }
 
-// Required marks the request body as required. Default: false.
-func Required() Option {
-	required := true
+// Required sets whether the request body is required. Default: true.
+func Required(v bool) Option {
 	return func(b *v3.RequestBody, _ *schema.Registry) {
-		b.Required = &required
+		b.Required = &v
 	}
 }
 
