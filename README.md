@@ -183,18 +183,17 @@ api.HandleFunc("GET /users/{id}", getUser)
 http.ListenAndServe(":8080", mux)
 ```
 
-### Mount
+### Group
 
-`Mount` groups routes under a path prefix using a callback. The callback receives a `Prefix`-wrapped mux and may apply additional mux types before registering routes:
+`Group` registers a group of routes by calling sub with a Prefixed mux.
 
 ```go
 mux := httpx.New()
 
-httpx.Mount(mux, "/api/v1", func(mux httpx.Mux) httpx.Mux {
+httpx.Group(mux, "/api/v1", func(mux httpx.Mux) {
     mux = httpx.Use(mux, authMiddleware)
     mux.Route("GET /users", listUsers)   // GET /api/v1/users
     mux.Route("POST /users", createUser) // POST /api/v1/users
-    return mux
 })
 
 http.ListenAndServe(":8080", mux)
