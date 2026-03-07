@@ -11,41 +11,16 @@ import (
 // the resulting pattern on the underlying mux. Any HTTP method specified in
 // the pattern (for example "GET /users") is preserved in the resulting pattern.
 // No other parsing, normalization, or rewriting is performed.
-//
-// The prefix must start with '/'.
-// The pattern may be empty ("") or start with '/'.
-//
-// Examples:
-//
-//	Prefix(mux, "/api").Handle("", h)
-//	  → registers "/api"
-//
-//	Prefix(mux, "/api").Handle("/", h)
-//	  → registers "/api/"
-//
-//	Prefix(mux, "/api").Handle("POST ", h)
-//	  → registers "POST /api"
-//
-//	Prefix(mux, "/api").Handle("/users", h)
-//	  → registers "/api/users"
-//
-//	Prefix(mux, "/api").Handle("GET /users", h)
-//	  → registers "GET /api/users"
 func Prefix(mux ServeMux, prefix string) Mux {
 	return &prefixMux{mux, prefix}
 }
 
 // Group registers a group of routes by calling sub with a Prefixed mux.
-// Routes registered on the mux passed to sub will be registered under
-// the given prefix.
 //
-// Example:
-//
-//	httpx.Group(mux, "/api/v1", func(mux httpx.Mux) {
-//	    mux = httpx.Use(mux, authMiddleware)
-//	    mux.Route("GET /users", listUsers)   // registers GET /api/v1/users
-//	    mux.Route("POST /users", createUser) // registers POST /api/v1/users
-//	})
+// Prefix concatenates the prefix with each registered pattern and registers
+// the resulting pattern on the underlying mux. Any HTTP method specified in
+// the pattern (for example "GET /users") is preserved in the resulting pattern.
+// No other parsing, normalization, or rewriting is performed.
 func Group(mux ServeMux, prefix string, sub func(Mux)) {
 	sub(Prefix(mux, prefix))
 }
