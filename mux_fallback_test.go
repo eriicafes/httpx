@@ -10,7 +10,7 @@ import (
 
 func TestFallback_HandleError(t *testing.T) {
 	baseMux := http.NewServeMux()
-	errorHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	errorHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("fallback: " + err.Error()))
 	})
@@ -37,7 +37,7 @@ func TestFallback_HandleError(t *testing.T) {
 
 func TestFallback_HandleSuccess(t *testing.T) {
 	baseMux := http.NewServeMux()
-	errorHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	errorHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("should not reach here"))
 	})
@@ -65,7 +65,7 @@ func TestFallback_HandleSuccess(t *testing.T) {
 
 func TestFallback_Handle(t *testing.T) {
 	baseMux := http.NewServeMux()
-	errorHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	errorHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusBadGateway)
 	})
 
@@ -91,7 +91,7 @@ func TestFallback_Handle(t *testing.T) {
 
 func TestFallback_HandleFunc(t *testing.T) {
 	baseMux := http.NewServeMux()
-	errorHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	errorHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusBadGateway)
 	})
 
@@ -117,7 +117,7 @@ func TestFallback_HandleFunc(t *testing.T) {
 
 func TestFallback_CustomJSONErrorHandler(t *testing.T) {
 	baseMux := http.NewServeMux()
-	errorHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	errorHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{

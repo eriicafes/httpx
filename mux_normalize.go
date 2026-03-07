@@ -17,7 +17,7 @@ type normalizeTrailingSlashMux struct {
 	mux ServeMux
 }
 
-func (m *normalizeTrailingSlashMux) SubMux() ServeMux {
+func (m *normalizeTrailingSlashMux) Mux() ServeMux {
 	return m.mux
 }
 

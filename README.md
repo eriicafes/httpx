@@ -1,6 +1,6 @@
 # httpx
 
-Extended HTTP utilities for Go, extending `net/http` with middleware support, error handling, and composable mux wrappers.
+Extended HTTP utilities for Go, extending `net/http` with middleware support, error handling, and composable mux types.
 
 ## Installation
 
@@ -16,7 +16,7 @@ go get github.com/eriicafes/httpx
 - **Route prefixing** - Group routes under a common prefix
 - **Trailing slash normalization** - Automatically handle routes with/without trailing slashes
 - **Custom error handling** - Define how errors from handlers are processed
-- **Composable** - Chain multiple mux wrappers together
+- **Composable** - Chain multiple mux types together
 
 ## Subpackages
 
@@ -183,6 +183,23 @@ api.HandleFunc("GET /users/{id}", getUser)
 http.ListenAndServe(":8080", mux)
 ```
 
+### Mount
+
+`Mount` groups routes under a path prefix using a callback. The callback receives a `Prefix`-wrapped mux and may apply additional mux types before registering routes:
+
+```go
+mux := httpx.New()
+
+httpx.Mount(mux, "/api/v1", func(mux httpx.Mux) httpx.Mux {
+    mux = httpx.Use(mux, authMiddleware)
+    mux.Route("GET /users", listUsers)   // GET /api/v1/users
+    mux.Route("POST /users", createUser) // POST /api/v1/users
+    return mux
+})
+
+http.ListenAndServe(":8080", mux)
+```
+
 ### Trailing Slash Normalization
 
 Handle routes with or without trailing slashes:
@@ -238,7 +255,7 @@ mux.Route("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) error 
 })
 ```
 
-### Composing Wrappers
+### Composing Mux
 
 ```go
 mux := httpx.New()
@@ -339,7 +356,7 @@ http.ListenAndServe(":8080", mux)
 
 ### Implementing Custom Mux
 
-Create custom mux wrappers by implementing the `Mux` interface:
+Create custom mux types by implementing the `Mux` interface:
 
 ```go
 type LoggingMux struct {
@@ -347,7 +364,7 @@ type LoggingMux struct {
 }
 
 // Expose underlying mux for error handler delegation
-func (m *LoggingMux) SubMux() httpx.ServeMux {
+func (m *LoggingMux) Mux() httpx.ServeMux {
     return m.mux
 }
 
@@ -379,7 +396,7 @@ mux := NewLoggingMux(http.NewServeMux())
 
 **Key points:**
 - Implement `ServeHTTP`, `Handle`, `HandleFunc`, and `Route` methods
-- Use `SubMux()` to expose the underlying mux for error handler delegation
+- Use `Mux()` to expose the underlying mux for error handler delegation
 - Use `httpx.Handler(mux, handler)` in `Route()` to wrap error-returning handlers
 
 ## License

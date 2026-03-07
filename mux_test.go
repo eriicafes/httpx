@@ -226,7 +226,7 @@ func TestInternalError(t *testing.T) {
 
 func TestMuxErrorHandler(t *testing.T) {
 	baseMux := http.NewServeMux()
-	customHandler := ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+	customHandler := errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusTeapot)
 		w.Write([]byte("custom error"))
 	})
