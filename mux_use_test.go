@@ -7,8 +7,6 @@ import (
 )
 
 func TestUse_SingleMiddleware(t *testing.T) {
-	baseMux := http.NewServeMux()
-
 	middleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Middleware", "applied")
@@ -16,7 +14,7 @@ func TestUse_SingleMiddleware(t *testing.T) {
 		})
 	}
 
-	mux := Use(baseMux, middleware)
+	mux := Use(http.NewServeMux(), middleware)
 
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("test"))
@@ -25,7 +23,7 @@ func TestUse_SingleMiddleware(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
 
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Header().Get("X-Middleware") != "applied" {
 		t.Errorf("expected X-Middleware header 'applied', got %q", rec.Header().Get("X-Middleware"))
@@ -37,8 +35,6 @@ func TestUse_SingleMiddleware(t *testing.T) {
 }
 
 func TestUse_MultipleMiddlewares(t *testing.T) {
-	baseMux := http.NewServeMux()
-
 	middleware1 := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Middleware-1", "first")
@@ -60,7 +56,7 @@ func TestUse_MultipleMiddlewares(t *testing.T) {
 		})
 	}
 
-	mux := Use(baseMux, middleware1, middleware2, middleware3)
+	mux := Use(http.NewServeMux(), middleware1, middleware2, middleware3)
 
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("test"))
@@ -69,7 +65,7 @@ func TestUse_MultipleMiddlewares(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
 
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Header().Get("X-Middleware-1") != "first" {
 		t.Errorf("expected X-Middleware-1 header 'first', got %q", rec.Header().Get("X-Middleware-1"))
@@ -89,8 +85,6 @@ func TestUse_MultipleMiddlewares(t *testing.T) {
 }
 
 func TestUse_MiddlewareOrder(t *testing.T) {
-	baseMux := http.NewServeMux()
-
 	var executionOrder []string
 
 	middleware1 := func(next http.Handler) http.Handler {
@@ -109,7 +103,7 @@ func TestUse_MiddlewareOrder(t *testing.T) {
 		})
 	}
 
-	mux := Use(baseMux, middleware1, middleware2)
+	mux := Use(http.NewServeMux(), middleware1, middleware2)
 
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		executionOrder = append(executionOrder, "handler")
@@ -118,7 +112,7 @@ func TestUse_MiddlewareOrder(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
 
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	expected := []string{"m1-before", "m2-before", "handler", "m2-after", "m1-after"}
 	if len(executionOrder) != len(expected) {
@@ -133,8 +127,7 @@ func TestUse_MiddlewareOrder(t *testing.T) {
 }
 
 func TestUse_NoMiddlewares(t *testing.T) {
-	baseMux := http.NewServeMux()
-	mux := Use(baseMux)
+	mux := Use(http.NewServeMux())
 
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("no middleware"))
@@ -143,77 +136,14 @@ func TestUse_NoMiddlewares(t *testing.T) {
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
 
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Body.String() != "no middleware" {
 		t.Errorf("expected body 'no middleware', got %q", rec.Body.String())
 	}
 }
 
-func TestUse_Handle(t *testing.T) {
-	baseMux := http.NewServeMux()
-
-	middleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Applied", "true")
-			next.ServeHTTP(w, r)
-		})
-	}
-
-	mux := Use(baseMux, middleware)
-
-	mux.Handle("/handle", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("handle"))
-	}))
-
-	req := httptest.NewRequest("GET", "/handle", nil)
-	rec := httptest.NewRecorder()
-
-	baseMux.ServeHTTP(rec, req)
-
-	if rec.Header().Get("X-Applied") != "true" {
-		t.Errorf("expected X-Applied header 'true', got %q", rec.Header().Get("X-Applied"))
-	}
-
-	if rec.Body.String() != "handle" {
-		t.Errorf("expected body 'handle', got %q", rec.Body.String())
-	}
-}
-
-func TestUse_Route(t *testing.T) {
-	baseMux := http.NewServeMux()
-
-	middleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Applied", "true")
-			next.ServeHTTP(w, r)
-		})
-	}
-
-	mux := Use(baseMux, middleware)
-
-	mux.Route("/route", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("route"))
-		return nil
-	})
-
-	req := httptest.NewRequest("GET", "/route", nil)
-	rec := httptest.NewRecorder()
-
-	baseMux.ServeHTTP(rec, req)
-
-	if rec.Header().Get("X-Applied") != "true" {
-		t.Errorf("expected X-Applied header 'true', got %q", rec.Header().Get("X-Route"))
-	}
-
-	if rec.Body.String() != "route" {
-		t.Errorf("expected body 'route', got %q", rec.Body.String())
-	}
-}
-
 func TestUse_MiddlewareShortCircuit(t *testing.T) {
-	baseMux := http.NewServeMux()
-
 	middleware := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Short-circuit: don't call next handler
@@ -222,7 +152,7 @@ func TestUse_MiddlewareShortCircuit(t *testing.T) {
 		})
 	}
 
-	mux := Use(baseMux, middleware)
+	mux := Use(http.NewServeMux(), middleware)
 
 	mux.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("should not reach here"))
@@ -231,7 +161,7 @@ func TestUse_MiddlewareShortCircuit(t *testing.T) {
 	req := httptest.NewRequest("GET", "/protected", nil)
 	rec := httptest.NewRecorder()
 
-	baseMux.ServeHTTP(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)

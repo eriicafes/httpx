@@ -5,10 +5,38 @@ import (
 	"strings"
 )
 
-// NormalizeTrailingSlash returns a Mux which registers routes with normalized trailing slash.
-// For each route pattern it registers "/path" and "/path/{$}".
-// This serves both the base path and the exact trailing slash path.
-// Patterns ending with `/` or `{$}` are not duplicated.
+// NormalizeTrailingSlash returns a Mux that registers an exact trailing
+// slash variant for each base pattern, so both "/path" and "/path/" match
+// the same handler. Patterns already ending with "/" or "/{$}" are unchanged.
+//
+// By default, Go's mux treats these pattern types as follows:
+//
+//	mux := http.NewServeMux()
+//	mux.HandleFunc("/api", h)     // base: exact match only
+//	  → GET /api        → 200
+//	  → GET /api/       → 404
+//	  → GET /api/nested → 404
+//
+//	mux.HandleFunc("/api/", h)    // subtree: matches /api/ and all paths below
+//	  → GET /api        → 301 redirect to /api/
+//	  → GET /api/       → 200
+//	  → GET /api/nested → 200
+//
+//	mux.HandleFunc("/api/{$}", h) // exact trailing slash: matches /api/ only
+//	  → GET /api        → 301 redirect to /api/
+//	  → GET /api/       → 200
+//	  → GET /api/nested → 404
+//
+// To support both "/api" and "/api/", you would have to register "/api/{$}"
+// manually and still accept that "/api" redirects to "/api/" instead of
+// being served directly. NormalizeTrailingSlash solves this by registering
+// both "/api" and "/api/{$}":
+//
+//	mux := httpx.NormalizeTrailingSlash(mux)
+//	mux.HandleFunc("/api", h) // registers both /api and /api/{$}
+//	  → GET /api        → 200
+//	  → GET /api/       → 200
+//	  → GET /api/nested → 404
 func NormalizeTrailingSlash(mux ServeMux) Mux {
 	return &normalizeTrailingSlashMux{mux}
 }

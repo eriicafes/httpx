@@ -201,20 +201,41 @@ http.ListenAndServe(":8080", mux)
 
 ### Trailing Slash Normalization
 
-Handle routes with or without trailing slashes:
+By default, Go's mux treats trailing slash patterns differently:
 
 ```go
-import "github.com/eriicafes/httpx"
+mux := http.NewServeMux()
 
+mux.HandleFunc("/api", h)     // base: exact match only
+// GET /api        → 200
+// GET /api/       → 404
+// GET /api/nested → 404
+
+mux.HandleFunc("/api/", h)    // subtree: matches /api/ and all paths below
+// GET /api        → 301 redirect to /api/
+// GET /api/       → 200
+// GET /api/nested → 200
+
+mux.HandleFunc("/api/{$}", h) // exact trailing slash: matches /api/ only
+// GET /api        → 301 redirect to /api/
+// GET /api/       → 200
+// GET /api/nested → 404
+```
+
+To support both `/api` and `/api/`, you would have to register `/api/{$}` manually and still accept that `/api` redirects to `/api/` instead of being served directly. `NormalizeTrailingSlash` solves this by registering both `/api` and `/api/{$}`:
+
+```go
 mux := httpx.NormalizeTrailingSlash(http.NewServeMux())
 
-// Both /api/users and /api/users/ will match
-mux.HandleFunc("GET /api/users", listUsers)
+mux.HandleFunc("/api", h) // registers both /api and /api/{$}
+// GET /api        → 200
+// GET /api/       → 200
+// GET /api/nested → 404
 
 http.ListenAndServe(":8080", mux)
 ```
 
-For each route pattern, two routes are registered: the original pattern and the pattern with exact trailing slash match using `{$}`. Patterns ending with `/` or `{$}` are not duplicated.
+Patterns already ending with `/` or `/{$}` are unchanged.
 
 ### Custom Error Handling
 
