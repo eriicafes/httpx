@@ -35,12 +35,44 @@ func Prefix(mux ServeMux, prefix string) Mux {
 	return &prefixMux{mux, prefix}
 }
 
+// Group registers a group of routes by calling sub with a Prefixed mux.
+// Routes registered on the mux passed to sub will be registered under
+// the given prefix.
+//
+// Example:
+//
+//	httpx.Group(mux, "/api/v1", func(mux httpx.Mux) {
+//	    mux = httpx.Use(mux, authMiddleware)
+//	    mux.Route("GET /users", listUsers)   // registers GET /api/v1/users
+//	    mux.Route("POST /users", createUser) // registers POST /api/v1/users
+//	})
+func Group(mux ServeMux, prefix string, sub func(Mux)) {
+	sub(Prefix(mux, prefix))
+}
+
+// MuxPrefix returns the cumulative path prefix accumulated by any Prefix
+// mux types in the chain. Returns an empty string if no prefix is found.
+func MuxPrefix(mux ServeMux) string {
+	prefix := ""
+	for {
+		switch m := mux.(type) {
+		case *prefixMux:
+			prefix = m.prefix + prefix
+			mux = m.mux
+		case Mux:
+			mux = m.Mux()
+		default:
+			return prefix
+		}
+	}
+}
+
 type prefixMux struct {
 	mux    ServeMux
 	prefix string
 }
 
-func (m *prefixMux) SubMux() ServeMux {
+func (m *prefixMux) Mux() ServeMux {
 	return m.mux
 }
 

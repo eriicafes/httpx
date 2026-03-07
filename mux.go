@@ -94,6 +94,7 @@ type ServeMux interface {
 // Mux is a specialized mux that can register routes with handlers that return an error.
 type Mux interface {
 	ServeMux
+	Mux() ServeMux
 	Route(pattern string, handler func(http.ResponseWriter, *http.Request) error)
 }
 
@@ -116,12 +117,6 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := f(w, r); err != nil {
 		defaultErrorHandler(w, r, err)
 	}
-}
-
-type ErrorHandlerFunc func(http.ResponseWriter, *http.Request, error)
-
-func (f ErrorHandlerFunc) HandleError(w http.ResponseWriter, r *http.Request, err error) {
-	f(w, r, err)
 }
 
 type ErrorHandler interface {
@@ -161,14 +156,20 @@ func MuxErrorHandler(mux ServeMux) ErrorHandler {
 		switch m := mux.(type) {
 		case ErrorHandler:
 			return m
-		case interface{ SubMux() ServeMux }:
-			mux = m.SubMux()
+		case Mux:
+			mux = m.Mux()
 		default:
-			return ErrorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
+			return errorHandlerFunc(func(w http.ResponseWriter, r *http.Request, err error) {
 				defaultErrorHandler(w, r, err)
 			})
 		}
 	}
+}
+
+type errorHandlerFunc func(http.ResponseWriter, *http.Request, error)
+
+func (f errorHandlerFunc) HandleError(w http.ResponseWriter, r *http.Request, err error) {
+	f(w, r, err)
 }
 
 // defaultErrorHandler is the default error handler used by [HandlerFunc] and [Handler].
@@ -206,9 +207,7 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 		w.WriteHeader(http.StatusBadRequest)
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{
-		"error": err.Error(),
-	})
+	json.NewEncoder(w).Encode(JSON{"error": err.Error()})
 }
 
 // InternalError wraps an error with a user-friendly message for client responses.
@@ -228,10 +227,7 @@ func InternalError(err error, message string) error {
 	if message == "" {
 		message = "Something went wrong"
 	}
-	return &internalError{
-		err:     err,
-		message: message,
-	}
+	return &internalError{err: err, message: message}
 }
 
 // internalError wraps an error with a user-friendly message.
@@ -242,10 +238,6 @@ type internalError struct {
 	message string
 }
 
-func (e *internalError) Error() string {
-	return e.message
-}
+func (e *internalError) Error() string { return e.message }
 
-func (e *internalError) Unwrap() error {
-	return e.err
-}
+func (e *internalError) Unwrap() error { return e.err }

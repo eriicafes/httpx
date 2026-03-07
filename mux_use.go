@@ -20,7 +20,7 @@ type useMux struct {
 	middlewares []Middleware
 }
 
-func (m *useMux) SubMux() ServeMux {
+func (m *useMux) Mux() ServeMux {
 	return m.mux
 }
 
