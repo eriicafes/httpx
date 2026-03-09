@@ -498,7 +498,7 @@ mux.Handle("GET /docs/reference", router.ReferenceHandler(nil))
 
 ### Schema Customisation
 
-Types implement `schema.SchemaOption` to annotate their generated schema:
+Types implement `schema.Schema` to annotate their generated schema:
 
 ```go
 type User struct {
