@@ -14,6 +14,12 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
+// NoContent is used as the type parameter for RequestBody or Response when there is no content body.
+// It implements the noContent marker interface checked inline by body.New and resp.New.
+type NoContent struct{}
+
+func (NoContent) NoContent() {}
+
 // Option configures an OpenAPI operation.
 type Option func(*v3.Operation, *store.Store)
 
