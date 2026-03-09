@@ -18,7 +18,10 @@ func New[T any](store *store.Store, opts ...Option) *v3.RequestBody {
 		Required: &required,
 		Content:  orderedmap.New[string, *v3.MediaType](),
 	}
-	b.Content.Set("application/json", mediatype.New[T](store))
+	// op.NoContent skips setting a default application/json content entry.
+	if _, ok := any(new(T)).(interface{ NoContent() }); !ok {
+		b.Content.Set("application/json", mediatype.New[T](store))
+	}
 	if rb, ok := any(new(T)).(RequestBody); ok {
 		rb.RequestBody()(b, store)
 	}

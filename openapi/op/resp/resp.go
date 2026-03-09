@@ -7,9 +7,6 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
-// NoContent is used as the type parameter for Response when the body is empty.
-type NoContent struct{}
-
 // Response is implemented by types that provide default response options.
 type Response interface {
 	Response() Option
@@ -20,8 +17,8 @@ func New[T any](store *store.Store, description string, opts ...Option) *v3.Resp
 		Description: description,
 		Content:     orderedmap.New[string, *v3.MediaType](),
 	}
-	// NoContent skips setting a default application/json content entry.
-	if _, ok := any(new(T)).(NoContent); !ok {
+	// op.NoContent skips setting a default application/json content entry.
+	if _, ok := any(new(T)).(interface{ NoContent() }); !ok {
 		r.Content.Set("application/json", mediatype.New[T](store))
 	}
 	if rv, ok := any(new(T)).(Response); ok {
