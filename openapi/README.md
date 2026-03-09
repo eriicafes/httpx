@@ -265,7 +265,7 @@ op.Response[User](200,
 
 ## Schema Customization
 
-### SchemaOption Interface
+### Schema Interface
 
 Implement `Schema() schema.Option` on your types to customize how they are reflected:
 

@@ -47,7 +47,7 @@ var normalizePathTests = []struct {
 	{
 		name:  "root exact match",
 		input: "/{$}",
-		want:  "",
+		want:  "/",
 	},
 	{
 		name:  "nested path",
@@ -125,7 +125,7 @@ func TestRouter_WithMux_SharesDocument(t *testing.T) {
 
 func TestRouter_Path_GET(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("GET /users", op.Summary("list users"))
+	r.Operation("GET /users", op.Summary("list users"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users")
 	if !ok {
@@ -144,7 +144,7 @@ func TestRouter_Path_GET(t *testing.T) {
 
 func TestRouter_Path_POST(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("POST /users", op.Summary("create user"))
+	r.Operation("POST /users", op.Summary("create user"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users")
 	if !ok {
@@ -163,7 +163,7 @@ func TestRouter_Path_POST(t *testing.T) {
 
 func TestRouter_Path_PUT(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("PUT /users/{id}", op.Summary("update user"))
+	r.Operation("PUT /users/{id}", op.Summary("update user"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users/{id}")
 	if !ok {
@@ -176,7 +176,7 @@ func TestRouter_Path_PUT(t *testing.T) {
 
 func TestRouter_Path_PATCH(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("PATCH /users/{id}", op.Summary("patch user"))
+	r.Operation("PATCH /users/{id}", op.Summary("patch user"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users/{id}")
 	if !ok {
@@ -189,7 +189,7 @@ func TestRouter_Path_PATCH(t *testing.T) {
 
 func TestRouter_Path_DELETE(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("DELETE /users/{id}", op.Summary("delete user"))
+	r.Operation("DELETE /users/{id}", op.Summary("delete user"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users/{id}")
 	if !ok {
@@ -202,7 +202,7 @@ func TestRouter_Path_DELETE(t *testing.T) {
 
 func TestRouter_Path_NoMethod_SetsAllMethods(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("/users", op.Summary("all methods"))
+	r.Operation("/users", op.Summary("all methods"))
 
 	item, ok := r.GetDocument().Paths.PathItems.Get("/users")
 	if !ok {
@@ -227,9 +227,9 @@ func TestRouter_Path_NoMethod_SetsAllMethods(t *testing.T) {
 
 func TestRouter_Path_MultiplePaths(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("GET /users", op.Summary("list"))
-	r.Path("POST /users", op.Summary("create"))
-	r.Path("GET /items", op.Summary("items"))
+	r.Operation("GET /users", op.Summary("list"))
+	r.Operation("POST /users", op.Summary("create"))
+	r.Operation("GET /items", op.Summary("items"))
 
 	d := r.GetDocument()
 
@@ -254,7 +254,7 @@ func TestRouter_Path_WithMuxPrefix(t *testing.T) {
 	prefixed := httpx.Prefix(base, "/api")
 	r := NewRouter().WithMux(prefixed)
 
-	r.Path("GET /users", op.Summary("list"))
+	r.Operation("GET /users", op.Summary("list"))
 
 	d := r.GetDocument()
 	if _, ok := d.Paths.PathItems.Get("/api/users"); !ok {
@@ -267,7 +267,7 @@ func TestRouter_Path_WithMuxPrefix(t *testing.T) {
 
 func TestRouter_Path_NormalizesWildcard(t *testing.T) {
 	r := NewRouter().WithMux(http.NewServeMux())
-	r.Path("GET /files/{path...}", op.Summary("download"))
+	r.Operation("GET /files/{path...}", op.Summary("download"))
 
 	if _, ok := r.GetDocument().Paths.PathItems.Get("/files/{path}"); !ok {
 		t.Error("expected normalized path /files/{path}")
@@ -288,10 +288,12 @@ func TestUseRouter_Found(t *testing.T) {
 }
 
 func TestUseRouter_NotFound(t *testing.T) {
-	r := UseRouter(http.NewServeMux())
-	if r != nil {
-		t.Error("expected UseRouter to return nil when no openapiMux is in the chain")
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected UseRouter to panic when no openapiMux is in the chain")
+		}
+	}()
+	UseRouter(http.NewServeMux())
 }
 
 func TestUseRouter_ThroughPrefix(t *testing.T) {
@@ -335,7 +337,7 @@ func TestUseRouter_BindsOriginalMux(t *testing.T) {
 		t.Fatal("expected non-nil router")
 	}
 
-	r.Path("GET /users", op.Summary("list"))
+	r.Operation("GET /users", op.Summary("list"))
 
 	if _, ok := r.GetDocument().Paths.PathItems.Get("/v1/users"); !ok {
 		t.Error("expected path /v1/users using the bound mux prefix")

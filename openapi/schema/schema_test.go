@@ -1,39 +1,38 @@
-package schema_test
+package schema
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
-	"github.com/eriicafes/httpx/openapi/schema"
-	"github.com/pb33f/libopenapi/datamodel/high/base"
-	"github.com/pb33f/libopenapi/orderedmap"
+	"github.com/eriicafes/httpx/openapi/store"
+	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-func TestSchemaFromType_Primitives(t *testing.T) {
+func TestNew_Primitives(t *testing.T) {
 	tests := []struct {
 		name     string
-		t        reflect.Type
+		v        any
 		wantType string
 	}{
-		{"string", reflect.TypeFor[string](), "string"},
-		{"bool", reflect.TypeFor[bool](), "boolean"},
-		{"int", reflect.TypeFor[int](), "integer"},
-		{"int8", reflect.TypeFor[int8](), "integer"},
-		{"int16", reflect.TypeFor[int16](), "integer"},
-		{"int32", reflect.TypeFor[int32](), "integer"},
-		{"int64", reflect.TypeFor[int64](), "integer"},
-		{"uint", reflect.TypeFor[uint](), "integer"},
-		{"uint8", reflect.TypeFor[uint8](), "integer"},
-		{"uint16", reflect.TypeFor[uint16](), "integer"},
-		{"uint32", reflect.TypeFor[uint32](), "integer"},
-		{"uint64", reflect.TypeFor[uint64](), "integer"},
-		{"float32", reflect.TypeFor[float32](), "number"},
-		{"float64", reflect.TypeFor[float64](), "number"},
+		{"string", "", "string"},
+		{"bool", false, "boolean"},
+		{"int", int(0), "integer"},
+		{"int8", int8(0), "integer"},
+		{"int16", int16(0), "integer"},
+		{"int32", int32(0), "integer"},
+		{"int64", int64(0), "integer"},
+		{"uint", uint(0), "integer"},
+		{"uint8", uint8(0), "integer"},
+		{"uint16", uint16(0), "integer"},
+		{"uint32", uint32(0), "integer"},
+		{"uint64", uint64(0), "integer"},
+		{"float32", float32(0), "number"},
+		{"float64", float64(0), "number"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := schema.SchemaFromType(tt.t)
+			proxy := TypeOf(tt.v, nil)
+			s := proxy.Schema()
 			if len(s.Type) != 1 || s.Type[0] != tt.wantType {
 				t.Errorf("expected type [%s], got %v", tt.wantType, s.Type)
 			}
@@ -41,8 +40,37 @@ func TestSchemaFromType_Primitives(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Pointer(t *testing.T) {
-	s := schema.SchemaFromType(reflect.TypeFor[*string]())
+func TestNew_Recursive(t *testing.T) {
+	type Node struct {
+		Value int
+		Next  *Node
+	}
+	// Should not loop infinitely.
+	proxy := New[Node](nil)
+	s := proxy.Schema()
+	if len(s.Type) != 1 || s.Type[0] != "object" {
+		t.Errorf("expected type [object], got %v", s.Type)
+	}
+	if _, ok := s.Properties.Get("Value"); !ok {
+		t.Error("expected 'Value' property to exist")
+	}
+}
+
+func TestNew_UnsupportedType(t *testing.T) {
+	// Channels fall back to an unconstrained schema.
+	proxy := New[chan int](nil)
+	s := proxy.Schema()
+	if len(s.Type) != 0 {
+		t.Errorf("expected unconstrained schema (no type), got %v", s.Type)
+	}
+}
+
+func TestNew_PointerNullable(t *testing.T) {
+	proxy := New[*string](nil)
+	s := proxy.Schema()
+	if s == nil {
+		t.Fatal("expected non-nil schema")
+	}
 	if len(s.Type) != 1 || s.Type[0] != "string" {
 		t.Errorf("expected type [string], got %v", s.Type)
 	}
@@ -51,8 +79,31 @@ func TestSchemaFromType_Pointer(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Slice(t *testing.T) {
-	s := schema.SchemaFromType(reflect.TypeFor[[]string]())
+func TestNew_NilRegistry(t *testing.T) {
+	proxy := New[string](nil)
+	s := proxy.Schema()
+	if s == nil {
+		t.Fatal("expected non-nil schema for inline proxy")
+	}
+	if len(s.Type) != 1 || s.Type[0] != "string" {
+		t.Errorf("expected type [string], got %v", s.Type)
+	}
+}
+
+func TestNew_Pointer(t *testing.T) {
+	proxy := New[*string](nil)
+	s := proxy.Schema()
+	if len(s.Type) != 1 || s.Type[0] != "string" {
+		t.Errorf("expected type [string], got %v", s.Type)
+	}
+	if s.Nullable == nil || !*s.Nullable {
+		t.Error("expected nullable=true for pointer type")
+	}
+}
+
+func TestNew_Slice(t *testing.T) {
+	proxy := New[[]string](nil)
+	s := proxy.Schema()
 	if len(s.Type) != 1 || s.Type[0] != "array" {
 		t.Errorf("expected type [array], got %v", s.Type)
 	}
@@ -65,8 +116,9 @@ func TestSchemaFromType_Slice(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Array(t *testing.T) {
-	s := schema.SchemaFromType(reflect.TypeFor[[3]int]())
+func TestNew_Array(t *testing.T) {
+	proxy := New[[3]int](nil)
+	s := proxy.Schema()
 	if len(s.Type) != 1 || s.Type[0] != "array" {
 		t.Errorf("expected type [array], got %v", s.Type)
 	}
@@ -79,8 +131,9 @@ func TestSchemaFromType_Array(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Map(t *testing.T) {
-	s := schema.SchemaFromType(reflect.TypeFor[map[string]int]())
+func TestNew_Map(t *testing.T) {
+	proxy := New[map[string]int](nil)
+	s := proxy.Schema()
 	if len(s.Type) != 1 || s.Type[0] != "object" {
 		t.Errorf("expected type [object], got %v", s.Type)
 	}
@@ -93,8 +146,9 @@ func TestSchemaFromType_Map(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_TimeTime(t *testing.T) {
-	s := schema.SchemaFromType(reflect.TypeFor[time.Time]())
+func TestNew_Time(t *testing.T) {
+	proxy := New[time.Time](nil)
+	s := proxy.Schema()
 	if len(s.Type) != 1 || s.Type[0] != "string" {
 		t.Errorf("expected type [string], got %v", s.Type)
 	}
@@ -103,17 +157,20 @@ func TestSchemaFromType_TimeTime(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Struct(t *testing.T) {
+func TestNew_Struct(t *testing.T) {
 	type User struct {
 		ID       int
 		Name     string
 		Email    string  `json:"email"`
 		Password string  `json:"-"`
 		Bio      *string `json:"bio"`
+		Age      int     `json:"age,omitzero"`
+		Role     string  `json:"role,omitempty"`
 		internal string  //nolint:unused
 	}
 
-	s := schema.SchemaFromType(reflect.TypeFor[User]())
+	proxy := New[User](nil)
+	s := proxy.Schema()
 
 	if len(s.Type) != 1 || s.Type[0] != "object" {
 		t.Errorf("expected type [object], got %v", s.Type)
@@ -146,6 +203,12 @@ func TestSchemaFromType_Struct(t *testing.T) {
 	if required["bio"] {
 		t.Error("expected 'bio' (pointer type) to not be required")
 	}
+	if required["age"] {
+		t.Error("expected 'age' (omitzero field) to not be required")
+	}
+	if required["role"] {
+		t.Error("expected 'role' (omitempty field) to not be required")
+	}
 
 	// Struct should disallow additional properties.
 	if s.AdditionalProperties == nil || s.AdditionalProperties.N != 1 || s.AdditionalProperties.B {
@@ -153,7 +216,7 @@ func TestSchemaFromType_Struct(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_StructPropertyTypes(t *testing.T) {
+func TestNew_StructPropertyTypes(t *testing.T) {
 	type Item struct {
 		Count int
 		Name  string
@@ -161,7 +224,8 @@ func TestSchemaFromType_StructPropertyTypes(t *testing.T) {
 		Tags  []string
 	}
 
-	s := schema.SchemaFromType(reflect.TypeFor[Item]())
+	proxy := New[Item](nil)
+	s := proxy.Schema()
 
 	scalar := []struct {
 		field    string
@@ -191,13 +255,14 @@ func TestSchemaFromType_StructPropertyTypes(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_StructPointerField(t *testing.T) {
+func TestNew_StructPointerField(t *testing.T) {
 	type Profile struct {
 		Name string
 		Bio  *string
 	}
 
-	s := schema.SchemaFromType(reflect.TypeFor[Profile]())
+	proxy := New[Profile](nil)
+	s := proxy.Schema()
 
 	bioProp, ok := s.Properties.Get("Bio")
 	if !ok {
@@ -217,94 +282,84 @@ func TestSchemaFromType_StructPointerField(t *testing.T) {
 	}
 }
 
-func TestSchemaFromType_Recursive(t *testing.T) {
-	type Node struct {
-		Value int
-		Next  *Node
-	}
-	// Should not loop infinitely.
-	s := schema.SchemaFromType(reflect.TypeFor[Node]())
-	if len(s.Type) != 1 || s.Type[0] != "object" {
-		t.Errorf("expected type [object], got %v", s.Type)
-	}
-	if _, ok := s.Properties.Get("Value"); !ok {
-		t.Error("expected 'Value' property to exist")
-	}
-}
-
-func TestSchemaFromType_UnsupportedType(t *testing.T) {
-	// Channels fall back to an unconstrained schema.
-	s := schema.SchemaFromType(reflect.TypeFor[chan int]())
-	if len(s.Type) != 0 {
-		t.Errorf("expected unconstrained schema (no type), got %v", s.Type)
-	}
-}
-
-// reflectSchemaType is a struct type that implements SchemaOption and requests
+// schemaType is a struct type that implements Schema and requests
 // registration under a named $ref.
-type reflectSchemaType struct {
+type schemaType struct {
 	ID   int
 	Name string
 }
 
-func (reflectSchemaType) Schema() schema.Option {
-	return schema.Ref("ReflectSchemaType")
+func (schemaType) Schema() Option {
+	return Reference("SchemaType")
 }
 
-func TestReflectType_PointerNullable(t *testing.T) {
-	proxy := schema.ReflectType(reflect.TypeFor[*string](), nil)
+type nonSchemaType struct {
+	ID   int
+	Name string
+}
+
+func TestNew_WithoutReference(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
+
+	// Types without a Reference must be returned as an inline schema, not a $ref.
+	proxy := New[nonSchemaType](store)
 	s := proxy.Schema()
 	if s == nil {
-		t.Fatal("expected non-nil schema")
+		t.Fatal("expected inline schema (non-nil Schema()), got $ref proxy")
 	}
-	if len(s.Type) != 1 || s.Type[0] != "string" {
-		t.Errorf("expected type [string], got %v", s.Type)
+	if len(s.Type) != 1 || s.Type[0] != "object" {
+		t.Errorf("expected type [object], got %v", s.Type)
 	}
-	if s.Nullable == nil || !*s.Nullable {
-		t.Error("expected nullable=true for pointer type")
+
+	// No schema should be stored in the map for a type without Reference.
+	if components.Schemas != nil && components.Schemas.Len() > 0 {
+		t.Error("expected no schemas stored for type without Reference")
 	}
 }
 
-func TestReflectType_NilRegistry(t *testing.T) {
-	proxy := schema.ReflectType(reflect.TypeFor[string](), nil)
-	s := proxy.Schema()
-	if s == nil {
-		t.Fatal("expected non-nil schema for inline proxy")
-	}
-	if len(s.Type) != 1 || s.Type[0] != "string" {
-		t.Errorf("expected type [string], got %v", s.Type)
-	}
-}
+func TestNew_ReferenceIsNeverInlined(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
 
-func TestReflectType_RegistryWithoutRef(t *testing.T) {
-	schemas := orderedmap.New[string, *base.SchemaProxy]()
-	reg := schema.NewRegistry(schemas)
-
-	proxy := schema.ReflectType(reflect.TypeFor[int](), reg)
-	s := proxy.Schema()
-	if s == nil {
-		t.Fatal("expected non-nil schema for inline proxy")
-	}
-	if len(s.Type) != 1 || s.Type[0] != "integer" {
-		t.Errorf("expected type [integer], got %v", s.Type)
+	// First call: schema is built and stored; a $ref proxy must be returned, not the inline schema.
+	proxy := New[schemaType](store)
+	if proxy.Schema() != nil {
+		t.Error("first call: expected $ref proxy (Schema() must be nil without document context), got inline schema")
 	}
 
-	// No schema should be stored in the map for a primitive without Ref.
-	if _, ok := schemas.Get("int"); ok {
-		t.Error("expected no schemas stored for primitive type without Ref")
+	// Second call: type is already in the store; must still return a $ref proxy.
+	proxy2 := New[schemaType](store)
+	if proxy2.Schema() != nil {
+		t.Error("second call: expected $ref proxy, got inline schema")
 	}
-}
 
-func TestReflectType_RegistryWithRef(t *testing.T) {
-	schemas := orderedmap.New[string, *base.SchemaProxy]()
-	reg := schema.NewRegistry(schemas)
-
-	schema.ReflectType(reflect.TypeFor[reflectSchemaType](), reg)
-
-	// Schema must be stored in components/schemas under the Ref name.
-	stored, ok := schemas.Get("ReflectSchemaType")
+	// The full schema must be present in components/schemas.
+	key := "#/components/schemas/SchemaType"
+	stored, ok := components.Schemas.Get(key)
 	if !ok {
-		t.Fatal("expected schema stored in registry under 'ReflectSchemaType'")
+		t.Fatalf("expected schema stored in components under '%s'", key)
+	}
+	s := stored.Schema()
+	if s == nil {
+		t.Fatal("expected stored schema to be non-nil")
+	}
+	if len(s.Type) != 1 || s.Type[0] != "object" {
+		t.Errorf("expected stored schema type [object], got %v", s.Type)
+	}
+}
+
+func TestNew_StoresReference(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
+
+	New[schemaType](store)
+
+	// Schema must be stored in components/schemas.
+	key := "#/components/schemas/SchemaType"
+	stored, ok := components.Schemas.Get(key)
+	if !ok {
+		t.Fatalf("expected schema stored in registry under '%s'", key)
 	}
 	storedSchema := stored.Schema()
 	if storedSchema == nil {
@@ -315,63 +370,46 @@ func TestReflectType_RegistryWithRef(t *testing.T) {
 	}
 }
 
-func TestReflectType_RegistryWithRef_Caching(t *testing.T) {
-	schemas := orderedmap.New[string, *base.SchemaProxy]()
-	reg := schema.NewRegistry(schemas)
+func TestNew_ReturnsReference(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
 
-	schema.ReflectType(reflect.TypeFor[reflectSchemaType](), reg)
-	schema.ReflectType(reflect.TypeFor[reflectSchemaType](), reg)
+	New[schemaType](store).Schema()
+	New[schemaType](store).Schema()
 
 	// Schema should be stored exactly once despite two calls.
-	if _, ok := schemas.Get("ReflectSchemaType"); !ok {
-		t.Fatal("expected schema stored in registry")
+	key := "#/components/schemas/SchemaType"
+	if _, ok := components.Schemas.Get(key); !ok {
+		t.Fatalf("expected schema stored in registry under '%s'", key)
 	}
-	// A second entry should not appear.
-	count := 0
-	for pair := schemas.First(); pair != nil; pair = pair.Next() {
-		if pair.Key() == "ReflectSchemaType" {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Errorf("expected exactly 1 registry entry for ReflectSchemaType, got %d", count)
+	// Only one entry should not stored.
+	if components.Schemas.Len() != 1 {
+		t.Errorf("expected exactly 1 registry entry, got %d", components.Schemas.Len())
 	}
 }
 
-func TestReflectType_DereferencesPointer(t *testing.T) {
-	schemas := orderedmap.New[string, *base.SchemaProxy]()
-	reg := schema.NewRegistry(schemas)
+func TestNew_DereferencesPointer(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
 
-	// *reflectSchemaType should dereference and trigger the SchemaOption.
-	schema.ReflectType(reflect.TypeFor[*reflectSchemaType](), reg)
+	// *schemaType should dereference and trigger the Schema.
+	New[*schemaType](store)
 
-	if _, ok := schemas.Get("ReflectSchemaType"); !ok {
-		t.Error("expected pointer type to be dereferenced and trigger SchemaOption Ref")
+	key := "#/components/schemas/SchemaType"
+	if _, ok := components.Schemas.Get(key); !ok {
+		t.Error("expected pointer type to be dereferenced and trigger Schema Reference")
 	}
 }
 
-func TestReflectType_SchemaOptionApplied(t *testing.T) {
-	type describedType struct {
-		Value string
-	}
-	// Use a local SchemaOption that sets Description.
-	// Since we can't define a method on a local type, we test via a named type.
-	// Instead, verify that Ref is applied through the global reflectSchemaType.
-	schemas := orderedmap.New[string, *base.SchemaProxy]()
-	reg := schema.NewRegistry(schemas)
+func TestNew_DereferencesDoublePointer(t *testing.T) {
+	components := &v3.Components{}
+	store := store.New(components)
 
-	schema.ReflectType(reflect.TypeFor[reflectSchemaType](), reg)
+	// *schemaType should dereference and trigger the Schema.
+	New[**schemaType](store)
 
-	stored, ok := schemas.Get("ReflectSchemaType")
-	if !ok {
-		t.Fatal("expected schema stored")
-	}
-	// The stored schema is for reflectSchemaType which has ID and Name fields.
-	s := stored.Schema()
-	if _, ok := s.Properties.Get("ID"); !ok {
-		t.Error("expected 'ID' property in stored schema")
-	}
-	if _, ok := s.Properties.Get("Name"); !ok {
-		t.Error("expected 'Name' property in stored schema")
+	key := "#/components/schemas/SchemaType"
+	if _, ok := components.Schemas.Get(key); !ok {
+		t.Error("expected pointer type to be dereferenced and trigger Schema Reference")
 	}
 }

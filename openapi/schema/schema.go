@@ -4,132 +4,144 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/eriicafes/httpx/openapi/store"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/orderedmap"
+	"go.yaml.in/yaml/v4"
 )
 
-// SchemaOption allows a type to customise its generated JSON Schema.
-type SchemaOption interface {
+type Schema interface {
 	Schema() Option
 }
 
-// ReflectType builds a SchemaProxy from a reflect.Type, applying SchemaOption constraints
-// if the type implements the interface. Pass a non-nil registry to enable component
-// auto-registration for types that declare a Reference via schema.Ref.
-func ReflectType(t reflect.Type, registry *Registry) *base.SchemaProxy {
-	return reflectType(t, make(map[reflect.Type]bool), registry)
+func New[T any](store *store.Store) *base.SchemaProxy {
+	return getSchemaForType(reflect.TypeFor[T](), store, make(map[reflect.Type]bool))
 }
 
-func reflectType(t reflect.Type, visited map[reflect.Type]bool, registry *Registry) *base.SchemaProxy {
-	return registry.Get(t, func(rf *RegistryField) *base.SchemaProxy {
-		elem, s := schemaFromType(t, visited, registry)
-		proxy := base.CreateSchemaProxy(s)
+type TypeGetter func(store *store.Store) *base.SchemaProxy
 
-		// Interface types cannot be allocated; skip the SchemaOption check for them.
-		if elem.Kind() != reflect.Interface {
-			v := reflect.New(elem)
-			if sc, ok := v.Elem().Interface().(SchemaOption); ok {
-				sc.Schema()(s, rf)
-			} else if sc, ok := v.Interface().(SchemaOption); ok {
-				sc.Schema()(s, rf)
-			}
-		}
-
-		return proxy
-	})
-}
-
-// SchemaFromType builds a base.Schema from a reflect.Type without registry support.
-func SchemaFromType(t reflect.Type) *base.Schema {
-	_, s := schemaFromType(t, make(map[reflect.Type]bool), nil)
-	return s
-}
-
-// schemaFromType returns the base (non-pointer) type and the JSON Schema for t.
-// For pointer types it sets nullable on the element's schema and returns the
-// underlying base type so callers can use it without re-dereferencing.
-func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Registry) (reflect.Type, *base.Schema) {
-	if t.Kind() == reflect.Pointer {
-		underlying, s := schemaFromType(t.Elem(), visited, registry)
-		nullable := true
-		s.Nullable = &nullable
-		return underlying, s
+func Type[T any]() TypeGetter {
+	return func(store *store.Store) *base.SchemaProxy {
+		return getSchemaForType(reflect.TypeFor[T](), store, make(map[reflect.Type]bool))
 	}
+}
+
+func TypeOf(i any, store *store.Store) *base.SchemaProxy {
+	return getSchemaForType(reflect.TypeOf(i), store, make(map[reflect.Type]bool))
+}
+
+// getSchemaForType returns the JSON Schema for t.
+// For pointer types it sets nullable on the element's schema.
+func getSchemaForType(t reflect.Type, store *store.Store, visited map[reflect.Type]bool) *base.SchemaProxy {
+	var isPointer bool
+	for t.Kind() == reflect.Pointer {
+		t, isPointer = t.Elem(), true
+	}
+
+	// Get schema proxy ref for type if stored
+	if store != nil {
+		if schema, ok := store.GetSchema(t); ok {
+			return schema
+		}
+	}
+
+	var schema *base.Schema
+	var unsupported bool
 
 	switch t.Kind() {
 	case reflect.String:
-		return t, &base.Schema{Type: []string{"string"}}
+		schema = &base.Schema{Type: []string{"string"}}
 	case reflect.Bool:
-		return t, &base.Schema{Type: []string{"boolean"}}
+		schema = &base.Schema{Type: []string{"boolean"}}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return t, &base.Schema{Type: []string{"integer"}}
+		schema = &base.Schema{Type: []string{"integer"}}
 	case reflect.Float32, reflect.Float64:
-		return t, &base.Schema{Type: []string{"number"}}
-	case reflect.Slice, reflect.Array:
-		return t, &base.Schema{
+		schema = &base.Schema{Type: []string{"number"}}
+	case reflect.Slice:
+		schema = &base.Schema{
 			Type: []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{
 				N: 0,
-				A: reflectType(t.Elem(), visited, registry),
+				A: getSchemaForType(t.Elem(), store, visited),
 			},
 		}
+	case reflect.Array:
+		n := int64(t.Len())
+		schema = &base.Schema{
+			Type: []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{
+				N: 0,
+				A: getSchemaForType(t.Elem(), store, visited),
+			},
+			MinItems: &n,
+			MaxItems: &n,
+		}
 	case reflect.Map:
-		return t, &base.Schema{
+		schema = &base.Schema{
 			Type: []string{"object"},
 			AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
 				N: 0,
-				A: reflectType(t.Elem(), visited, registry),
+				A: getSchemaForType(t.Elem(), store, visited),
 			},
 		}
 	case reflect.Struct:
 		// union types expand to oneOf / tagged oneOf with discriminator
-		if info := unionFromType(t); info != nil {
-			s := &base.Schema{OneOf: info.schemas}
+		if info := unionFromType(t, store, visited); info != nil {
+			schema = &base.Schema{OneOf: info.schemas}
 			if info.discriminator != nil {
-				s.Discriminator = info.discriminator
+				schema.Discriminator = info.discriminator
 			}
-			return t, s
+			break
 		}
 
 		// special case time.Time
 		if t.PkgPath() == "time" && t.Name() == "Time" {
-			return t, &base.Schema{
+			schema = &base.Schema{
 				Type:   []string{"string"},
 				Format: "date-time",
 			}
+			break
 		}
 
-		// Guard against self-referential types (e.g. type Node struct { Next *Node }).
+		// Guard against self-referential types
 		if visited[t] {
-			return t, &base.Schema{}
+			schema = &base.Schema{}
+			break
 		}
 		visited[t] = true
 
 		props := orderedmap.New[string, *base.SchemaProxy]()
 		required := []string{}
 
-		for i := 0; i < t.NumField(); i++ {
+		for i := range t.NumField() {
 			f := t.Field(i)
 			if !f.IsExported() {
 				continue
 			}
-			name := f.Name
+			name, omittable := f.Name, false
 			if tag, ok := f.Tag.Lookup("json"); ok {
-				tagName, _, _ := strings.Cut(tag, ",")
+				tagName, restTag, _ := strings.Cut(tag, ",")
 				if tagName == "-" {
 					continue
 				}
 				if tagName != "" {
 					name = tagName
 				}
+				if strings.Contains(restTag, "omitempty") || strings.Contains(restTag, "omitzero") {
+					omittable = true
+				}
 			}
-			props.Set(name, reflectType(f.Type, visited, registry))
-			if f.Type.Kind() != reflect.Pointer {
+			fieldSchema := getSchemaForType(f.Type, store, visited)
+			if fieldSchema == nil {
+				continue
+			}
+			props.Set(name, fieldSchema)
+			if f.Type.Kind() != reflect.Pointer && !omittable {
 				required = append(required, name)
 			}
 		}
-		return t, &base.Schema{
+		schema = &base.Schema{
 			Type:       []string{"object"},
 			Properties: props,
 			Required:   required,
@@ -140,6 +152,129 @@ func schemaFromType(t reflect.Type, visited map[reflect.Type]bool, registry *Reg
 		}
 	default:
 		// Unsupported types (Interface, Chan, Func, Complex, etc.) fall back to an unconstrained schema.
-		return t, &base.Schema{}
+		schema, unsupported = &base.Schema{}, true
 	}
+
+	// Apply default nullable for pointer types
+	if isPointer {
+		schema.Nullable = &isPointer
+	}
+
+	if unsupported {
+		return base.CreateSchemaProxy(schema)
+	}
+
+	// Apply schema options via interface
+	var state State
+	if sc, ok := reflect.New(t).Interface().(Schema); ok {
+		sc.Schema()(schema, &Store{store, &state})
+	}
+
+	proxy := base.CreateSchemaProxy(schema)
+	// If a reference is set, store the full schema in components
+	// and return a schema $ref object.
+	if store != nil && state.Reference != "" {
+		ref := store.SetSchema(t, state.Reference, proxy)
+		return base.CreateSchemaProxyRef(ref)
+	}
+	return proxy
+}
+
+const unionPkg = "github.com/eriicafes/union"
+
+type unionInfo struct {
+	schemas       []*base.SchemaProxy
+	discriminator *base.Discriminator
+}
+
+// unionFromType checks if t is a union.Union or union.TaggedUnion and returns
+// the expanded case schemas with an optional discriminator. Returns nil if t is
+// not a union type.
+func unionFromType(t reflect.Type, store *store.Store, visited map[reflect.Type]bool) *unionInfo {
+	if t.PkgPath() != unionPkg {
+		return nil
+	}
+
+	name := t.Name()
+	isTagged := strings.HasPrefix(name, "TaggedUnion")
+	isUntagged := strings.HasPrefix(name, "Union")
+	if !isTagged && !isUntagged {
+		return nil
+	}
+
+	// Both Union[Spec] and TaggedUnion[Spec] are struct{ Value Spec }.
+	if t.NumField() != 1 {
+		return nil
+	}
+	specType := t.Field(0).Type
+	if specType.Kind() != reflect.Struct {
+		return nil
+	}
+
+	if isTagged {
+		// Resolve field names via interface
+		variantKey, valueKey := "type", "value"
+		if spec, ok := reflect.New(specType).Interface().(interface {
+			TaggedFieldNames() (string, string)
+		}); ok {
+			variantKey, valueKey = spec.TaggedFieldNames()
+		}
+		return taggedUnionFromSpec(specType, variantKey, valueKey, store, visited)
+	}
+	return unionFromSpec(specType, store, visited)
+}
+
+// unionFromSpec builds case schemas for a Union.
+func unionFromSpec(specType reflect.Type, store *store.Store, visited map[reflect.Type]bool) *unionInfo {
+	info := &unionInfo{}
+	for i := range specType.NumField() {
+		f := specType.Field(i)
+		info.schemas = append(info.schemas, getSchemaForType(f.Type, store, visited))
+	}
+	return info
+}
+
+// taggedUnionFromSpec builds case schemas for a TaggedUnion.
+// Each case is an object with a const discriminator property (variantKey) and a
+// value property (valueKey) holding the field's schema.
+func taggedUnionFromSpec(specType reflect.Type, variantKey, valueKey string, store *store.Store, visited map[reflect.Type]bool) *unionInfo {
+	info := &unionInfo{
+		discriminator: &base.Discriminator{PropertyName: variantKey},
+	}
+
+	for i := range specType.NumField() {
+		f := specType.Field(i)
+		variantName := f.Tag.Get("variant")
+		if variantName == "" {
+			variantName = f.Name
+		}
+
+		props := orderedmap.New[string, *base.SchemaProxy]()
+		props.Set(variantKey, base.CreateSchemaProxy(&base.Schema{
+			Const: ToYAMLNode(variantName),
+		}))
+		props.Set(valueKey, getSchemaForType(f.Type, store, visited))
+
+		caseSchema := &base.Schema{
+			Type:       []string{"object"},
+			Properties: props,
+			Required:   []string{variantKey, valueKey},
+			AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+				N: 1, B: false,
+			},
+		}
+		info.schemas = append(info.schemas, base.CreateSchemaProxy(caseSchema))
+	}
+
+	return info
+}
+
+func ToYAMLNode(v any) *yaml.Node {
+	node := &yaml.Node{}
+	b, _ := yaml.Marshal(v)
+	_ = yaml.Unmarshal(b, node)
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		return node.Content[0]
+	}
+	return node
 }
