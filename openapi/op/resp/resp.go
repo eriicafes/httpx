@@ -7,7 +7,9 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
-// Response is implemented by types that provide default response options.
+// Response may be implemented to set default response options on a type.
+//
+//	func (T) Response() resp.Option
 type Response interface {
 	Response() Option
 }

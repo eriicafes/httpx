@@ -8,7 +8,19 @@ import (
 )
 
 // Option configures an OpenAPI request body.
+// May be returned from a type implementing the RequestBody interface:
+//
+//	func (T) RequestBody() Option
 type Option func(*v3.RequestBody, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(b *v3.RequestBody, store *store.Store) {
+		for _, opt := range opts {
+			opt(b, store)
+		}
+	}
+}
 
 // Reference sets a $ref to a named request body component in components/requestBodies.
 func Reference(name string) Option {

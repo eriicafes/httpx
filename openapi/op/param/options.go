@@ -10,7 +10,19 @@ import (
 )
 
 // Option configures an OpenAPI parameter.
+// May be returned from a type implementing the Parameter interface:
+//
+//	func (T) Parameter() Option
 type Option func(*v3.Parameter, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(p *v3.Parameter, store *store.Store) {
+		for _, opt := range opts {
+			opt(p, store)
+		}
+	}
+}
 
 // Reference sets a $ref to a named parameter component in components/parameters.
 func Reference(name string) Option {
@@ -78,11 +90,11 @@ func Example(v any) Option {
 }
 
 // NamedExample adds a named example to the parameter.
-func NamedExample(name string, opts ...example.Option) Option {
+func NamedExample(name string, value any, opts ...example.Option) Option {
 	return func(p *v3.Parameter, store *store.Store) {
 		if p.Examples == nil {
 			p.Examples = orderedmap.New[string, *base.Example]()
 		}
-		p.Examples.Set(name, example.New(store, opts...))
+		p.Examples.Set(name, example.New(store, value, opts...))
 	}
 }

@@ -6,7 +6,19 @@ import (
 )
 
 // Option configures an OpenAPI callback object.
+// May be returned from a type implementing the Callback interface:
+//
+//	func (T) Callback() Option
 type Option func(*v3.Callback, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(cb *v3.Callback, store *store.Store) {
+		for _, opt := range opts {
+			opt(cb, store)
+		}
+	}
+}
 
 // Reference sets a $ref to a named callback component in components/callbacks.
 func Reference(name string) Option {

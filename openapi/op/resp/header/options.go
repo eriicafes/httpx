@@ -10,7 +10,19 @@ import (
 )
 
 // Option configures an OpenAPI response header.
+// May be returned from a type implementing the Header interface:
+//
+//	func (T) Header() Option
 type Option func(*v3.Header, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(h *v3.Header, store *store.Store) {
+		for _, opt := range opts {
+			opt(h, store)
+		}
+	}
+}
 
 // Reference sets a $ref to a named header component in components/headers.
 func Reference(name string) Option {
@@ -77,11 +89,11 @@ func Example(v any) Option {
 }
 
 // NamedExample adds a named example to the header.
-func NamedExample(name string, opts ...example.Option) Option {
+func NamedExample(name string, value any, opts ...example.Option) Option {
 	return func(h *v3.Header, store *store.Store) {
 		if h.Examples == nil {
 			h.Examples = orderedmap.New[string, *base.Example]()
 		}
-		h.Examples.Set(name, example.New(store, opts...))
+		h.Examples.Set(name, example.New(store, value, opts...))
 	}
 }

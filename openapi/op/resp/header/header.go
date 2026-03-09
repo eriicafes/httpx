@@ -6,7 +6,9 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-// Header is implemented by types that provide default header options.
+// Header may be implemented to set default header options on a type.
+//
+//	func (T) Header() header.Option
 type Header interface {
 	Header() Option
 }

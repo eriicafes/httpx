@@ -6,7 +6,9 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
-// Callback is implemented by types that provide default callback options.
+// Callback may be implemented to set default callback options on a type.
+//
+//	func (T) Callback() callback.Option
 type Callback interface {
 	Callback() Option
 }

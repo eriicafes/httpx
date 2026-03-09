@@ -335,10 +335,10 @@ func TestNew_ReferenceIsNeverInlined(t *testing.T) {
 	}
 
 	// The full schema must be present in components/schemas.
-	key := "#/components/schemas/SchemaType"
-	stored, ok := components.Schemas.Get(key)
+	name := "SchemaType"
+	stored, ok := components.Schemas.Get(name)
 	if !ok {
-		t.Fatalf("expected schema stored in components under '%s'", key)
+		t.Fatalf("expected schema stored in components under '%s'", name)
 	}
 	s := stored.Schema()
 	if s == nil {
@@ -356,10 +356,10 @@ func TestNew_StoresReference(t *testing.T) {
 	New[schemaType](store)
 
 	// Schema must be stored in components/schemas.
-	key := "#/components/schemas/SchemaType"
-	stored, ok := components.Schemas.Get(key)
+	name := "SchemaType"
+	stored, ok := components.Schemas.Get(name)
 	if !ok {
-		t.Fatalf("expected schema stored in registry under '%s'", key)
+		t.Fatalf("expected schema stored in registry under '%s'", name)
 	}
 	storedSchema := stored.Schema()
 	if storedSchema == nil {
@@ -378,9 +378,9 @@ func TestNew_ReturnsReference(t *testing.T) {
 	New[schemaType](store).Schema()
 
 	// Schema should be stored exactly once despite two calls.
-	key := "#/components/schemas/SchemaType"
-	if _, ok := components.Schemas.Get(key); !ok {
-		t.Fatalf("expected schema stored in registry under '%s'", key)
+	name := "SchemaType"
+	if _, ok := components.Schemas.Get(name); !ok {
+		t.Fatalf("expected schema stored in registry under '%s'", name)
 	}
 	// Only one entry should not stored.
 	if components.Schemas.Len() != 1 {
@@ -395,8 +395,8 @@ func TestNew_DereferencesPointer(t *testing.T) {
 	// *schemaType should dereference and trigger the Schema.
 	New[*schemaType](store)
 
-	key := "#/components/schemas/SchemaType"
-	if _, ok := components.Schemas.Get(key); !ok {
+	name := "SchemaType"
+	if _, ok := components.Schemas.Get(name); !ok {
 		t.Error("expected pointer type to be dereferenced and trigger Schema Reference")
 	}
 }
@@ -408,8 +408,8 @@ func TestNew_DereferencesDoublePointer(t *testing.T) {
 	// *schemaType should dereference and trigger the Schema.
 	New[**schemaType](store)
 
-	key := "#/components/schemas/SchemaType"
-	if _, ok := components.Schemas.Get(key); !ok {
+	name := "SchemaType"
+	if _, ok := components.Schemas.Get(name); !ok {
 		t.Error("expected pointer type to be dereferenced and trigger Schema Reference")
 	}
 }

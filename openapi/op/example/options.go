@@ -1,9 +1,6 @@
 package example
 
-import (
-	"github.com/eriicafes/httpx/openapi/schema"
-	"github.com/pb33f/libopenapi/datamodel/high/base"
-)
+import "github.com/pb33f/libopenapi/datamodel/high/base"
 
 // Option configures an OpenAPI example object.
 type Option func(*base.Example)
@@ -29,15 +26,8 @@ func Description(s string) Option {
 	}
 }
 
-// Value sets the inline example value.
-func Value(v any) Option {
-	return func(e *base.Example) {
-		e.Value = schema.ToYAMLNode(v)
-	}
-}
-
 // ExternalValue sets a URL pointing to the literal example value.
-// Mutually exclusive with Value.
+// Mutually exclusive with the value argument to New.
 func ExternalValue(url string) Option {
 	return func(e *base.Example) {
 		e.ExternalValue = url

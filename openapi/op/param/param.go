@@ -6,7 +6,9 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-// Parameter is implemented by types that provide default parameter options.
+// Parameter may be implemented to set default parameter options on a type.
+//
+//	func (T) Parameter() param.Option
 type Parameter interface {
 	Parameter() Option
 }

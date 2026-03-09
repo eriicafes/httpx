@@ -9,8 +9,6 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-type Option func(*base.Schema, *Store)
-
 type Store struct {
 	*store.Store
 	state *State
@@ -19,6 +17,12 @@ type Store struct {
 type State struct {
 	Reference string
 }
+
+// Option configures an OpenAPI schema.
+// May be returned from a type implementing the Schema interface:
+//
+//	func (T) Schema() Option
+type Option func(*base.Schema, *Store)
 
 // Options combines multiple options into one.
 func Options(opts ...Option) Option {
