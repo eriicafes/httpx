@@ -6,7 +6,9 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-// MediaType is implemented by types that provide default media type options.
+// MediaType may be implemented to set default media type options on a type.
+//
+//	func (T) MediaType() mediatype.Option
 type MediaType interface {
 	MediaType() Option
 }

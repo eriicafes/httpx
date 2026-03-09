@@ -10,7 +10,19 @@ import (
 )
 
 // Option configures an OpenAPI response.
+// May be returned from a type implementing the Response interface:
+//
+//	func (T) Response() Option
 type Option func(*v3.Response, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(r *v3.Response, store *store.Store) {
+		for _, opt := range opts {
+			opt(r, store)
+		}
+	}
+}
 
 // Reference sets a $ref to a named response component in components/responses.
 func Reference(name string) Option {

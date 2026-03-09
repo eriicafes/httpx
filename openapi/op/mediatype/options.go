@@ -10,7 +10,19 @@ import (
 )
 
 // Option configures an OpenAPI media type object.
+// May be returned from a type implementing the MediaType interface:
+//
+//	func (T) MediaType() Option
 type Option func(*v3.MediaType, *store.Store)
+
+// Options combines multiple options into one.
+func Options(opts ...Option) Option {
+	return func(m *v3.MediaType, store *store.Store) {
+		for _, opt := range opts {
+			opt(m, store)
+		}
+	}
+}
 
 // Example sets an example value for the media type.
 func Example(v any) Option {
@@ -20,12 +32,12 @@ func Example(v any) Option {
 }
 
 // NamedExample adds a named example to the media type.
-func NamedExample(name string, opts ...example.Option) Option {
+func NamedExample(name string, value any, opts ...example.Option) Option {
 	return func(m *v3.MediaType, store *store.Store) {
 		if m.Examples == nil {
 			m.Examples = orderedmap.New[string, *base.Example]()
 		}
-		m.Examples.Set(name, example.New(store, opts...))
+		m.Examples.Set(name, example.New(store, value, opts...))
 	}
 }
 

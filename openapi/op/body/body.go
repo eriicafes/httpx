@@ -7,7 +7,9 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
-// RequestBody is implemented by types that provide default request body options.
+// RequestBody may be implemented to set default request body options on a type.
+//
+//	func (T) RequestBody() body.Option
 type RequestBody interface {
 	RequestBody() Option
 }

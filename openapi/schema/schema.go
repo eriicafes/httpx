@@ -10,6 +10,9 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
+// Schema may be implemented to set default schema options on a type.
+//
+//	func (T) Schema() schema.Option
 type Schema interface {
 	Schema() Option
 }

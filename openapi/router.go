@@ -93,9 +93,9 @@ func (r *Router) Operation(pattern string, opt op.Option) {
 
 	// If the path item is a reference, add the operation to the referenced component.
 	if item.Reference != "" {
-		ref := path.Base(item.Reference)
-		if ref, ok := r.store.GetPathItem(ref); ok {
-			pathitem.AddOperation(r.store, ref, method, opt)
+		name := path.Base(item.Reference)
+		if item, ok := r.store.GetPathItem(name); ok {
+			pathitem.AddOperation(r.store, item, method, opt)
 			return
 		}
 	}
