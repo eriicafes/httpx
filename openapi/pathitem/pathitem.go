@@ -10,51 +10,81 @@ import (
 )
 
 type Path struct {
-	Opts       []Option
-	Operations map[string]op.Option
-	Handlers   map[string]httpx.HandlerFunc
+	opts       []Option
+	operations map[string]op.Option
+	handlers   map[string]httpx.HandlerFunc
 }
 
 func New(opts ...Option) *Path {
 	return &Path{
-		Opts:       opts,
-		Operations: make(map[string]op.Option),
-		Handlers:   make(map[string]httpx.HandlerFunc),
+		opts:       opts,
+		operations: make(map[string]op.Option),
+		handlers:   make(map[string]httpx.HandlerFunc),
 	}
 }
 
+// Operation registers an OpenAPI operation for the given method.
+// If no method is present the operation is registered for all supported methods.
+// Use this when the handler is registered separately.
 func (p *Path) Operation(method string, opt op.Option) {
-	p.Operations[method] = opt
+	p.operations[method] = opt
 }
 
+// Route registers an OpenAPI operation and a handler on the underlying mux.
 func (p *Path) Route(method string, opt op.Option, handler func(http.ResponseWriter, *http.Request) error) {
 	p.Operation(method, opt)
-	p.Handlers[method] = handler
+	p.handlers[method] = handler
 }
 
-// Item constructs a v3.PathItem from the path's options and operations.
+// Handle registers an OpenAPI operation and a handler on the underlying mux.
+func (p *Path) Handle(method string, opt op.Option, handler http.Handler) {
+	p.Operation(method, opt)
+	p.handlers[method] = func(w http.ResponseWriter, r *http.Request) error {
+		handler.ServeHTTP(w, r)
+		return nil
+	}
+}
+
+// HandleFunc registers an OpenAPI operation and a handler func on the underlying mux.
+func (p *Path) HandleFunc(method string, opt op.Option, handler func(http.ResponseWriter, *http.Request)) {
+	p.Operation(method, opt)
+	p.handlers[method] = func(w http.ResponseWriter, r *http.Request) error {
+		handler(w, r)
+		return nil
+	}
+}
+
+// GetPathItem constructs an OpenAPI pathitem from the path's options and operations.
 // If a reference is set, the full item is stored in components and a $ref object is returned.
-func (p *Path) Item(store *store.Store) *v3.PathItem {
-	item := &v3.PathItem{}
-	for _, opt := range p.Opts {
+func (p *Path) GetPathItem(store *store.Store, item *v3.PathItem) *v3.PathItem {
+	if item == nil {
+		item = &v3.PathItem{}
+	}
+	for _, opt := range p.opts {
 		opt(item, store)
 	}
 	// If a reference is set, store the full path item in components
 	// and return a path item $ref object.
 	if store != nil && item.Reference != "" {
-		if _, ok := store.GetPathItem(item.Reference); !ok {
-			// Register operations only once for a *Path with reference
-			for method, opt := range p.Operations {
-				AddOperation(store, item, method, opt)
-			}
+		if p, ok := store.GetPathItem(item.Reference); ok {
+			// Skip registering operations for stored reference
+			return p
 		}
-		return &v3.PathItem{Reference: store.SetPathItem(item.Reference, item)}
+		for method, opt := range p.operations {
+			AddOperation(store, item, method, opt)
+		}
+		return store.SetPathItem(item.Reference, item)
 	}
-	// Register operations always if *Path has no reference
-	for method, opt := range p.Operations {
+	for method, opt := range p.operations {
 		AddOperation(store, item, method, opt)
 	}
 	return item
+}
+
+// GetHandlers returns the registered handlers for each method.
+// If no method is present the handler is registered for all supported methods.
+func (p *Path) GetHandlers() map[string]httpx.HandlerFunc {
+	return p.handlers
 }
 
 func AddOperation(store *store.Store, item *v3.PathItem, method string, opt op.Option) {
@@ -72,20 +102,11 @@ func AddOperation(store *store.Store, item *v3.PathItem, method string, opt op.O
 		item.Patch = operation
 	case http.MethodDelete:
 		item.Delete = operation
-	case http.MethodOptions:
-		item.Options = operation
-	case http.MethodHead:
-		item.Head = operation
-	case http.MethodTrace:
-		item.Trace = operation
 	case "":
 		item.Get = operation
 		item.Post = operation
 		item.Put = operation
 		item.Patch = operation
 		item.Delete = operation
-		item.Options = operation
-		item.Head = operation
-		item.Trace = operation
 	}
 }

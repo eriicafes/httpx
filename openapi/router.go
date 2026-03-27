@@ -1,8 +1,8 @@
 package openapi
 
 import (
+	"fmt"
 	"net/http"
-	"path"
 	"strings"
 
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
@@ -27,14 +27,14 @@ type Router struct {
 
 // NewRouter creates a standalone Router with the given document options.
 // The router has no mux bound to it. Call WithMux before registering routes.
-func NewRouter(opts ...doc.Option) *Router {
+func NewRouter(title, version string, opts ...doc.Option) *Router {
 	components := &v3.Components{}
 	store := store.New(components)
 	doc := &v3.Document{
 		Version: "3.1.0",
 		Info: &base.Info{
-			Title:   "API",
-			Version: "0.0.0",
+			Title:   title,
+			Version: version,
 		},
 		Paths: &v3.Paths{
 			PathItems: orderedmap.New[string, *v3.PathItem](),
@@ -60,7 +60,7 @@ func UseRouter(mux httpx.ServeMux) *Router {
 		case httpx.Mux:
 			mux = m.Mux()
 		default:
-			panic("openapi: no Router found in mux chain; wrap mux with openapi.WithRouter")
+			panic("httpx/openapi: no Router found in mux chain; wrap mux with openapi.WithRouter")
 		}
 	}
 }
@@ -72,9 +72,8 @@ func (r *Router) WithMux(mux httpx.ServeMux) *Router {
 }
 
 // Operation registers an OpenAPI operation for the given pattern.
-// The pattern follows the same "METHOD /path" format as the Go
-// ServeMux. If no method prefix is present the operation is recorded for all
-// supported methods.
+// The pattern follows the same "METHOD /path" format as the Go ServeMux.
+// If no method is present the operation is registered for all supported methods.
 // Use this when the handler is registered separately.
 func (r *Router) Operation(pattern string, opt op.Option) {
 	var method string
@@ -83,44 +82,57 @@ func (r *Router) Operation(pattern string, opt op.Option) {
 		method, pattern = before, after
 	}
 	pattern = httpx.MuxPrefix(r.mux) + pattern
-	pathname := normalizePath(pattern)
+	path := normalizePath(pattern)
 
-	item, ok := r.doc.Paths.PathItems.Get(pathname)
+	item, ok := r.doc.Paths.PathItems.Get(path)
 	if !ok {
 		item = &v3.PathItem{}
-		r.doc.Paths.PathItems.Set(pathname, item)
+		r.doc.Paths.PathItems.Set(path, item)
 	}
 
-	// If the path item is a reference, add the operation to the referenced component.
+	// Check for conflict (when existing item has a reference)
 	if item.Reference != "" {
-		name := path.Base(item.Reference)
-		if item, ok := r.store.GetPathItem(name); ok {
-			pathitem.AddOperation(r.store, item, method, opt)
-			return
-		}
+		panic(fmt.Errorf("httpx/openapi: path %q conflicts with existing path with reference %q", path, item.Reference))
 	}
 	pathitem.AddOperation(r.store, item, method, opt)
 }
 
 // Route registers an OpenAPI operation and a route handler on the underlying mux.
-// It combines Operation and mux.Handle in one call.
 func (r *Router) Route(pattern string, opt op.Option, handler func(http.ResponseWriter, *http.Request) error) {
 	r.Operation(pattern, opt)
 	r.mux.Handle(pattern, httpx.Handler(r.mux, handler))
 }
 
+// Handle registers an OpenAPI operation and a handler on the underlying mux.
+func (r *Router) Handle(pattern string, opt op.Option, handler http.Handler) {
+	r.Operation(pattern, opt)
+	r.mux.Handle(pattern, handler)
+}
+
+// HandleFunc registers an OpenAPI operation and a handler func on the underlying mux.
+func (r *Router) HandleFunc(pattern string, opt op.Option, handler func(http.ResponseWriter, *http.Request)) {
+	r.Operation(pattern, opt)
+	r.mux.HandleFunc(pattern, handler)
+}
+
+// Path registers an OpenAPI pathitem and its registered handlers for each method.
 func (r *Router) Path(pattern string, p *pathitem.Path) {
 	pattern = httpx.MuxPrefix(r.mux) + pattern
 	path := normalizePath(pattern)
 
-	// Construct path item
-	item := p.Item(r.store)
-
-	// Set path item
+	// Check for conflict (when existing or new item has a reference)
+	existingItem, ok := r.doc.Paths.PathItems.Get(path)
+	item := p.GetPathItem(r.store, existingItem)
+	if ok && existingItem.Reference != "" {
+		panic(fmt.Errorf("httpx/openapi: path %q conflicts with existing path with reference %q", path, existingItem.Reference))
+	}
+	if ok && item.Reference != "" {
+		panic(fmt.Errorf("httpx/openapi: path %q with reference %q conflicts with existing path", path, item.Reference))
+	}
 	r.doc.Paths.PathItems.Set(path, item)
 
 	// Register handlers
-	for method, handler := range p.Handlers {
+	for method, handler := range p.GetHandlers() {
 		pattern := pattern
 		if method != "" {
 			pattern = method + " " + pattern

@@ -9,8 +9,8 @@ import (
 
 // WithRouter wraps mux with an embedded OpenAPI Router configured by opts.
 // Use UseRouter to retrieve the Router and register OpenAPI operations and route handlers.
-func WithRouter(mux httpx.ServeMux, opts ...doc.Option) httpx.Mux {
-	return &openapiMux{mux, NewRouter(opts...)}
+func WithRouter(mux httpx.ServeMux, title, version string, opts ...doc.Option) httpx.Mux {
+	return &openapiMux{mux, NewRouter(title, version, opts...)}
 }
 
 type openapiMux struct {

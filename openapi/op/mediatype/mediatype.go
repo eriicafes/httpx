@@ -15,8 +15,8 @@ type MediaType interface {
 
 func New[T any](store *store.Store, opts ...Option) *v3.MediaType {
 	m := &v3.MediaType{Schema: schema.New[T](store)}
-	if mv, ok := any(new(T)).(MediaType); ok {
-		mv.MediaType()(m, store)
+	if t, ok := any(new(T)).(MediaType); ok {
+		t.MediaType()(m, store)
 	}
 	for _, opt := range opts {
 		opt(m, store)

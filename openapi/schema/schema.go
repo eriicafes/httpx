@@ -177,8 +177,7 @@ func getSchemaForType(t reflect.Type, store *store.Store, visited map[reflect.Ty
 	// If a reference is set, store the full schema in components
 	// and return a schema $ref object.
 	if store != nil && state.Reference != "" {
-		ref := store.SetSchema(t, state.Reference, proxy)
-		return base.CreateSchemaProxyRef(ref)
+		return store.SetSchema(t, state.Reference, proxy)
 	}
 	return proxy
 }

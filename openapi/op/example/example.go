@@ -17,7 +17,11 @@ func New(store *store.Store, value any, opts ...Option) *base.Example {
 	// If a reference is set, store the full example in components
 	// and return an example $ref object.
 	if store != nil && e.Reference != "" {
-		e = &base.Example{Reference: store.SetExample(e.Reference, e)}
+		e = store.SetExample(e.Reference, e)
 	}
 	return e
+}
+
+func NewRef(name string) *base.Example {
+	return base.CreateExampleRef("#/components/examples/" + name)
 }

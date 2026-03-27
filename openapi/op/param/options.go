@@ -98,3 +98,13 @@ func NamedExample(name string, value any, opts ...example.Option) Option {
 		p.Examples.Set(name, example.New(store, value, opts...))
 	}
 }
+
+// NamedExampleRef adds a named example $ref to the parameter.
+func NamedExampleRef(name, ref string) Option {
+	return func(p *v3.Parameter, store *store.Store) {
+		if p.Examples == nil {
+			p.Examples = orderedmap.New[string, *base.Example]()
+		}
+		p.Examples.Set(name, example.NewRef(ref))
+	}
+}

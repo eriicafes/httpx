@@ -14,6 +14,32 @@ func Reference(name string) Option {
 	}
 }
 
+// Type sets the security scheme type.
+func Type(s string) Option {
+	return func(ss *v3.SecurityScheme) {
+		ss.Type = s
+	}
+}
+
+// ApiKey sets an "apiKey" security scheme type.
+// in must be "header", "query", or "cookie".
+func ApiKey(in, name string) Option {
+	return func(ss *v3.SecurityScheme) {
+		ss.Type = TypeApiKey
+		ss.Name = name
+		ss.In = in
+	}
+}
+
+// HTTP sets an "http" security scheme type.
+// scheme is the HTTP Authorization scheme name (e.g. "bearer", "basic").
+func HTTP(scheme string) Option {
+	return func(ss *v3.SecurityScheme) {
+		ss.Type = TypeHTTP
+		ss.Scheme = scheme
+	}
+}
+
 // Description sets the security scheme description.
 func Description(s string) Option {
 	return func(ss *v3.SecurityScheme) {

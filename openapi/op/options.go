@@ -96,7 +96,7 @@ func Security(name string, scopes ...string) Option {
 func PathParam[T any](name string, opts ...param.Option) Option {
 	return func(operation *v3.Operation, store *store.Store) {
 		opts = append([]param.Option{param.Required(true)}, opts...)
-		p := param.New[T]("path", name, store, opts...)
+		p := param.New[T](param.InPath, name, store, opts...)
 		operation.Parameters = append(operation.Parameters, p)
 	}
 }
@@ -104,7 +104,7 @@ func PathParam[T any](name string, opts ...param.Option) Option {
 // QueryParam adds an optional query parameter to the operation.
 func QueryParam[T any](name string, opts ...param.Option) Option {
 	return func(operation *v3.Operation, store *store.Store) {
-		p := param.New[T]("query", name, store, opts...)
+		p := param.New[T](param.InQuery, name, store, opts...)
 		operation.Parameters = append(operation.Parameters, p)
 	}
 }
@@ -112,7 +112,7 @@ func QueryParam[T any](name string, opts ...param.Option) Option {
 // HeaderParam adds an optional header parameter to the operation.
 func HeaderParam[T any](name string, opts ...param.Option) Option {
 	return func(operation *v3.Operation, store *store.Store) {
-		p := param.New[T]("header", name, store, opts...)
+		p := param.New[T](param.InHeader, name, store, opts...)
 		operation.Parameters = append(operation.Parameters, p)
 	}
 }
@@ -120,7 +120,7 @@ func HeaderParam[T any](name string, opts ...param.Option) Option {
 // CookieParam adds an optional cookie parameter to the operation.
 func CookieParam[T any](name string, opts ...param.Option) Option {
 	return func(operation *v3.Operation, store *store.Store) {
-		p := param.New[T]("cookie", name, store, opts...)
+		p := param.New[T](param.InCookie, name, store, opts...)
 		operation.Parameters = append(operation.Parameters, p)
 	}
 }

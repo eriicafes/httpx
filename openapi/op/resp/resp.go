@@ -23,16 +23,19 @@ func New[T any](store *store.Store, description string, opts ...Option) *v3.Resp
 	if _, ok := any(new(T)).(interface{ NoContent() }); !ok {
 		r.Content.Set("application/json", mediatype.New[T](store))
 	}
-	if rv, ok := any(new(T)).(Response); ok {
-		rv.Response()(r, store)
+	if t, ok := any(new(T)).(Response); ok {
+		t.Response()(r, store)
 	}
-	for _, opt := range opts {
-		opt(r, store)
+	if r.Reference == "" {
+		// Skip inline options if reference is set on type
+		for _, opt := range opts {
+			opt(r, store)
+		}
 	}
 	// If a reference is set, store the full response in components
 	// and return a response $ref object.
 	if store != nil && r.Reference != "" {
-		r = &v3.Response{Reference: store.SetResponse(r.Reference, r)}
+		r = store.SetResponse(r.Reference, r)
 	}
 	return r
 }
