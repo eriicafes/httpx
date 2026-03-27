@@ -15,16 +15,19 @@ type Header interface {
 
 func New[T any](store *store.Store, opts ...Option) *v3.Header {
 	h := &v3.Header{Schema: schema.New[T](store)}
-	if hv, ok := any(new(T)).(Header); ok {
-		hv.Header()(h, store)
+	if t, ok := any(new(T)).(Header); ok {
+		t.Header()(h, store)
 	}
-	for _, opt := range opts {
-		opt(h, store)
+	if h.Reference == "" {
+		// Skip inline options if reference is set on type
+		for _, opt := range opts {
+			opt(h, store)
+		}
 	}
 	// If a reference is set, store the full header in components
 	// and return a header $ref object.
 	if store != nil && h.Reference != "" {
-		h = &v3.Header{Reference: store.SetHeader(h.Reference, h)}
+		h = store.SetHeader(h.Reference, h)
 	}
 	return h
 }

@@ -14,18 +14,10 @@ import (
 // Option configures an OpenAPI document.
 type Option func(*v3.Document, *store.Store)
 
-// OpenAPIVersion sets the OpenAPI specification version. Default: "3.1.0".
-func OpenAPIVersion(version string) Option {
+// Version sets the OpenAPI specification version. Default: "3.1.0".
+func Version(version string) Option {
 	return func(doc *v3.Document, _ *store.Store) {
 		doc.Version = version
-	}
-}
-
-// Info sets the API title and version.
-func Info(title, version string) Option {
-	return func(doc *v3.Document, _ *store.Store) {
-		doc.Info.Title = title
-		doc.Info.Version = version
 	}
 }
 
@@ -91,9 +83,9 @@ func Security(name string, scopes ...string) Option {
 }
 
 // SecurityScheme registers a named security scheme in components/securitySchemes.
-func SecurityScheme(name, schemeType string, opts ...securityscheme.Option) Option {
+func SecurityScheme(name string, opts ...securityscheme.Option) Option {
 	return func(doc *v3.Document, store *store.Store) {
-		securityscheme.New(store, name, schemeType, opts...)
+		securityscheme.New(store, name, opts...)
 	}
 }
 
@@ -118,6 +110,6 @@ func Webhook(name string, p *pathitem.Path) Option {
 		if d.Webhooks == nil {
 			d.Webhooks = orderedmap.New[string, *v3.PathItem]()
 		}
-		d.Webhooks.Set(name, p.Item(store))
+		d.Webhooks.Set(name, p.GetPathItem(store, nil))
 	}
 }

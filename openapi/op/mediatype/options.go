@@ -41,6 +41,16 @@ func NamedExample(name string, value any, opts ...example.Option) Option {
 	}
 }
 
+// NamedExampleRef adds a named example $ref to the media type.
+func NamedExampleRef(name, ref string) Option {
+	return func(m *v3.MediaType, store *store.Store) {
+		if m.Examples == nil {
+			m.Examples = orderedmap.New[string, *base.Example]()
+		}
+		m.Examples.Set(name, example.NewRef(ref))
+	}
+}
+
 // ItemSchema sets the item schema for the media type (OpenAPI 3.2+).
 func ItemSchema[T any]() Option {
 	return func(m *v3.MediaType, store *store.Store) {

@@ -97,3 +97,13 @@ func NamedExample(name string, value any, opts ...example.Option) Option {
 		h.Examples.Set(name, example.New(store, value, opts...))
 	}
 }
+
+// NamedExampleRef adds a named example $ref to the header.
+func NamedExampleRef(name, ref string) Option {
+	return func(h *v3.Header, store *store.Store) {
+		if h.Examples == nil {
+			h.Examples = orderedmap.New[string, *base.Example]()
+		}
+		h.Examples.Set(name, example.NewRef(ref))
+	}
+}

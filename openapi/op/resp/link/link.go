@@ -13,7 +13,7 @@ func New(store *store.Store, opts ...Option) *v3.Link {
 	// If a reference is set, store the full link in components
 	// and return a link $ref object.
 	if store != nil && l.Reference != "" {
-		l = &v3.Link{Reference: store.SetLink(l.Reference, l)}
+		l = store.SetLink(l.Reference, l)
 	}
 	return l
 }
