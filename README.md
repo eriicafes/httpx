@@ -24,7 +24,7 @@ go get github.com/eriicafes/httpx
 - [**httperrors**](httperrors/) - Structured HTTP error handling with status codes and details
 - [**contextkey**](contextkey/) - Type-safe context key management with generics
 - [**session**](session/) - Session-based authentication, cookies, and flash messages
-- [**openapi**](openapi/) - OpenAPI 3.1 spec generation with type-safe route documentation
+- [**openapi**](openapi/) - OpenAPI spec generation with type-safe route documentation
 
 ## Quick Start
 
