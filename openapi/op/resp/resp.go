@@ -14,11 +14,10 @@ type Response interface {
 	Response() Option
 }
 
-func New[T any](store *store.Store, description string, opts ...Option) *v3.Response {
-	r := &v3.Response{
-		Description: description,
-		Content:     orderedmap.New[string, *v3.MediaType](),
-	}
+// New builds a response for T with the provided description.
+// Unless T is op.NoContent, it adds an application/json media type by default.
+func New[T any](store *store.Store, opts ...Option) *v3.Response {
+	r := &v3.Response{Content: orderedmap.New[string, *v3.MediaType]()}
 	// op.NoContent skips setting a default application/json content entry.
 	if _, ok := any(new(T)).(interface{ NoContent() }); !ok {
 		r.Content.Set("application/json", mediatype.New[T](store))

@@ -1,3 +1,4 @@
+// Package openapi builds an OpenAPI document alongside httpx route registration.
 package openapi
 
 import (
@@ -122,7 +123,7 @@ func (r *Router) Path(pattern string, p *pathitem.Path) {
 
 	// Check for conflict (when existing or new item has a reference)
 	existingItem, ok := r.doc.Paths.PathItems.Get(path)
-	item := p.GetPathItem(r.store, existingItem)
+	item := pathitem.GetPathItem(p, r.store, existingItem)
 	if ok && existingItem.Reference != "" {
 		panic(fmt.Errorf("httpx/openapi: path %q conflicts with existing path with reference %q", path, existingItem.Reference))
 	}
@@ -132,7 +133,7 @@ func (r *Router) Path(pattern string, p *pathitem.Path) {
 	r.doc.Paths.PathItems.Set(path, item)
 
 	// Register handlers
-	for method, handler := range p.GetHandlers() {
+	for method, handler := range pathitem.GetHandlers(p) {
 		pattern := pattern
 		if method != "" {
 			pattern = method + " " + pattern

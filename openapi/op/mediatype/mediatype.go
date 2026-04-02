@@ -13,6 +13,7 @@ type MediaType interface {
 	MediaType() Option
 }
 
+// New builds a media type for T with a reflected schema and any additional options.
 func New[T any](store *store.Store, opts ...Option) *v3.MediaType {
 	m := &v3.MediaType{Schema: schema.New[T](store)}
 	if t, ok := any(new(T)).(MediaType); ok {

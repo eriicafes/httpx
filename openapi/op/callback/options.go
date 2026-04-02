@@ -6,9 +6,6 @@ import (
 )
 
 // Option configures an OpenAPI callback object.
-// May be returned from a type implementing the Callback interface:
-//
-//	func (T) Callback() Option
 type Option func(*v3.Callback, *store.Store)
 
 // Options combines multiple options into one.
@@ -27,19 +24,14 @@ func Reference(name string) Option {
 	}
 }
 
-// PathItemBuilder is satisfied by pathitem.Path and used to build a *v3.PathItem.
-type PathItemBuilder interface {
-	Item(*store.Store) *v3.PathItem
-}
-
 // Expression adds a runtime expression to path item mapping to the callback.
-// Pass a *pathitem.Path as the builder:
+// Pass a builder such as path.PathItem():
 //
 //	p := pathitem.New(...)
 //	p.Operation(http.MethodPost, op.Options(...))
-//	callback.Expression("{$url}", p)
-func Expression(expr string, p PathItemBuilder) Option {
+//	callback.Expression("{$url}", p.PathItem())
+func Expression(expr string, pathItem func(*store.Store) *v3.PathItem) Option {
 	return func(cb *v3.Callback, store *store.Store) {
-		cb.Expression.Set(expr, p.Item(store))
+		cb.Expression.Set(expr, pathItem(store))
 	}
 }

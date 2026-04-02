@@ -13,6 +13,7 @@ type Header interface {
 	Header() Option
 }
 
+// New builds a response header for T.
 func New[T any](store *store.Store, opts ...Option) *v3.Header {
 	h := &v3.Header{Schema: schema.New[T](store)}
 	if t, ok := any(new(T)).(Header); ok {

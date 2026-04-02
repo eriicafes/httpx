@@ -1,7 +1,6 @@
 package doc
 
 import (
-	"github.com/eriicafes/httpx/openapi/pathitem"
 	"github.com/eriicafes/httpx/openapi/securityscheme"
 	"github.com/eriicafes/httpx/openapi/server"
 	"github.com/eriicafes/httpx/openapi/store"
@@ -105,11 +104,16 @@ func ExternalDocs(url, description string) Option {
 }
 
 // Webhook adds a named webhook path to the API document.
-func Webhook(name string, p *pathitem.Path) Option {
+// Pass a builder function such as (*pathitem.Path).PathItem():
+//
+//	p := pathitem.New(...)
+//	p.Operation(http.MethodPost, op.Options(...))
+//	doc.Webhook("user.created", p.PathItem())
+func Webhook(name string, pathItem func(*store.Store) *v3.PathItem) Option {
 	return func(d *v3.Document, store *store.Store) {
 		if d.Webhooks == nil {
 			d.Webhooks = orderedmap.New[string, *v3.PathItem]()
 		}
-		d.Webhooks.Set(name, p.GetPathItem(store, nil))
+		d.Webhooks.Set(name, pathItem(store))
 	}
 }

@@ -5,6 +5,7 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
+// New builds a response link and stores it as a component when referenced.
 func New(store *store.Store, opts ...Option) *v3.Link {
 	l := &v3.Link{}
 	for _, opt := range opts {

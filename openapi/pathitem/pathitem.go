@@ -9,12 +9,14 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
+// Path collects path item options, operations, and optional handlers for a single path.
 type Path struct {
 	opts       []Option
 	operations map[string]op.Option
 	handlers   map[string]httpx.HandlerFunc
 }
 
+// New creates a Path that collects path item options, operations, and handlers.
 func New(opts ...Option) *Path {
 	return &Path{
 		opts:       opts,
@@ -54,9 +56,16 @@ func (p *Path) HandleFunc(method string, opt op.Option, handler func(http.Respon
 	}
 }
 
-// GetPathItem constructs an OpenAPI pathitem from the path's options and operations.
+// PathItem returns a builder function that constructs the path item from p.
+func (p *Path) PathItem() func(*store.Store) *v3.PathItem {
+	return func(store *store.Store) *v3.PathItem {
+		return GetPathItem(p, store, nil)
+	}
+}
+
+// GetPathItem constructs an OpenAPI path item from p's options and operations.
 // If a reference is set, the full item is stored in components and a $ref object is returned.
-func (p *Path) GetPathItem(store *store.Store, item *v3.PathItem) *v3.PathItem {
+func GetPathItem(p *Path, store *store.Store, item *v3.PathItem) *v3.PathItem {
 	if item == nil {
 		item = &v3.PathItem{}
 	}
@@ -81,12 +90,14 @@ func (p *Path) GetPathItem(store *store.Store, item *v3.PathItem) *v3.PathItem {
 	return item
 }
 
-// GetHandlers returns the registered handlers for each method.
+// GetHandlers returns the registered handlers for each method on p.
 // If no method is present the handler is registered for all supported methods.
-func (p *Path) GetHandlers() map[string]httpx.HandlerFunc {
+func GetHandlers(p *Path) map[string]httpx.HandlerFunc {
 	return p.handlers
 }
 
+// AddOperation applies opt to item for the given HTTP method.
+// An empty method registers the operation for all supported methods.
 func AddOperation(store *store.Store, item *v3.PathItem, method string, opt op.Option) {
 	operation := &v3.Operation{}
 	opt(operation, store)

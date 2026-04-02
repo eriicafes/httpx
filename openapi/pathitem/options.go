@@ -9,6 +9,7 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
+// Option configures an OpenAPI path item.
 type Option func(*v3.PathItem, *store.Store)
 
 // Reference sets a $ref to a named path item component in components/pathItems.

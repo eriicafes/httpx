@@ -17,18 +17,23 @@ type Schema interface {
 	Schema() Option
 }
 
+// New reflects T into an OpenAPI schema proxy.
+// When T declares schema options with Reference, the returned proxy is a $ref.
 func New[T any](store *store.Store) *base.SchemaProxy {
 	return getSchemaForType(reflect.TypeFor[T](), store, make(map[reflect.Type]bool))
 }
 
+// TypeGetter lazily resolves a schema proxy using the provided component store.
 type TypeGetter func(store *store.Store) *base.SchemaProxy
 
+// Type returns a TypeGetter for T for use with composition helpers such as OneOf and AllOf.
 func Type[T any]() TypeGetter {
 	return func(store *store.Store) *base.SchemaProxy {
 		return getSchemaForType(reflect.TypeFor[T](), store, make(map[reflect.Type]bool))
 	}
 }
 
+// TypeOf reflects the dynamic type of i into an OpenAPI schema proxy.
 func TypeOf(i any, store *store.Store) *base.SchemaProxy {
 	return getSchemaForType(reflect.TypeOf(i), store, make(map[reflect.Type]bool))
 }
@@ -91,8 +96,10 @@ func getSchemaForType(t reflect.Type, store *store.Store, visited map[reflect.Ty
 	case reflect.Struct:
 		// union types expand to oneOf / tagged oneOf with discriminator
 		if info := unionFromType(t, store, visited); info != nil {
-			schema = &base.Schema{OneOf: info.schemas}
+			schema = &base.Schema{AnyOf: info.schemas}
 			if info.discriminator != nil {
+				schema.AnyOf = nil
+				schema.OneOf = info.schemas
 				schema.Discriminator = info.discriminator
 			}
 			break
@@ -271,6 +278,7 @@ func taggedUnionFromSpec(specType reflect.Type, variantKey, valueKey string, sto
 	return info
 }
 
+// ToYAMLNode converts v into a YAML node suitable for libopenapi example-like fields.
 func ToYAMLNode(v any) *yaml.Node {
 	node := &yaml.Node{}
 	b, _ := yaml.Marshal(v)

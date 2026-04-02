@@ -6,6 +6,7 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 )
 
+// New builds an example from value and applies any additional example options.
 func New(store *store.Store, value any, opts ...Option) *base.Example {
 	e := &base.Example{}
 	if value != nil {
@@ -22,6 +23,7 @@ func New(store *store.Store, value any, opts ...Option) *base.Example {
 	return e
 }
 
+// NewRef returns an example reference to the named component in components/examples.
 func NewRef(name string) *base.Example {
 	return base.CreateExampleRef("#/components/examples/" + name)
 }

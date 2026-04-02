@@ -9,11 +9,13 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
+// Store wraps the shared component store with per-schema build state.
 type Store struct {
 	*store.Store
 	state *State
 }
 
+// State tracks transient schema build options that do not live directly on base.Schema.
 type State struct {
 	Reference string
 }
@@ -442,13 +444,9 @@ func OneOfUnion[T any]() Option {
 // AnyOf requires the value to be valid against at least one of the given schemas.
 //
 //	AnyOf(Type[A](), Type[B]()))
-//
-// If called with no arguments, the schemas are moved from s.OneOf to s.AnyOf.
 func AnyOf(types ...TypeGetter) Option {
 	return func(s *base.Schema, store *Store) {
 		if len(types) == 0 {
-			s.AnyOf = s.OneOf
-			s.OneOf = nil
 			return
 		}
 		schemas := make([]*base.SchemaProxy, len(types))
@@ -475,13 +473,9 @@ func AnyOfUnion[T any]() Option {
 // AllOf requires the value to be valid against all of the given schemas.
 //
 //	AllOf(Type[A](), Type[B]()))
-//
-// If called with no arguments, the schemas are moved from s.OneOf to s.AllOf.
 func AllOf(types ...TypeGetter) Option {
 	return func(s *base.Schema, store *Store) {
 		if len(types) == 0 {
-			s.AllOf = s.OneOf
-			s.OneOf = nil
 			return
 		}
 		schemas := make([]*base.SchemaProxy, len(types))
@@ -489,19 +483,6 @@ func AllOf(types ...TypeGetter) Option {
 			schemas[i] = t(store.Store)
 		}
 		s.AllOf = schemas
-	}
-}
-
-// AllOfUnion expands a union.Union or union.TaggedUnion type T into allOf case schemas.
-func AllOfUnion[T any]() Option {
-	return func(s *base.Schema, store *Store) {
-		rt := reflect.TypeFor[T]()
-		if info := unionFromType(rt, store.Store, make(map[reflect.Type]bool)); info != nil {
-			s.AllOf = info.schemas
-			if info.discriminator != nil {
-				s.Discriminator = info.discriminator
-			}
-		}
 	}
 }
 

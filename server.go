@@ -46,16 +46,14 @@ func ListenAndServe(addr string, handler http.Handler, config *ServerConfig) err
 	if server == nil {
 		server = &http.Server{}
 	}
+	server.Addr = addr
+	server.Handler = handler
 
 	// Use default shutdown timeout if zero
 	shutdownTimeout := config.ShutdownTimeout
 	if shutdownTimeout == 0 {
 		shutdownTimeout = 30 * time.Second
 	}
-
-	// Set address and handler
-	server.Addr = addr
-	server.Handler = handler
 
 	// Channel to listen for errors from the server
 	serverErr := make(chan error, 1)
@@ -95,10 +93,9 @@ func ListenAndServe(addr string, handler http.Handler, config *ServerConfig) err
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
+			return nil
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-
-		return nil
 	}
 }
