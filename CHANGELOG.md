@@ -1,5 +1,14 @@
 # httpx
 
+## 0.4.0
+
+### Minor Changes
+
+- 7029e63: Rename SubMux to Mux and add it to Mux interface
+- 7029e63: Add httpx.Group func for grouping routes with prefix
+- 7029e63: Add MuxPrefix func
+- 7029e63: Add openapi package
+
 ## 0.3.0
 
 ### Minor Changes
