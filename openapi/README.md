@@ -1,497 +1,681 @@
 # openapi
 
-OpenAPI document generation with automatic schema reflection and a Scalar reference UI.
+OpenAPI document generation for `httpx`, with automatic schema reflection and a Scalar reference UI.
+
+It is built on top of `github.com/pb33f/libopenapi` for the OpenAPI document model and `github.com/MarceloPetrucio/go-scalar-api-reference` for the Scalar reference UI.
 
 ## Installation
+
+Install the package with `go get`:
 
 ```bash
 go get github.com/eriicafes/httpx/openapi
 ```
 
-## Dependencies
-
-- [**pb33f/libopenapi**](https://github.com/pb33f/libopenapi) - OpenAPI document model and JSON/YAML rendering
-- [**MarceloPetrucio/go-scalar-api-reference**](https://github.com/MarceloPetrucio/go-scalar-api-reference) - Scalar API reference UI
-- [**eriicafes/union**](https://github.com/eriicafes/union) - Union types for `allOf`, `oneOf`, and `anyOf` schema types (optional)
-
-## Subpackages
-
-- **doc** - Document options
-- **op** - Operation options
-- **param** - Parameter options
-- **body** - Request body options
-- **resp** - Response options
-- **header** - Response header options
-- **schema** - JSON Schema options
-
 ## Quick Start
 
+This example wires `openapi` into an `httpx` mux, documents a route, and serves openapi JSON and Scalar docs:
+
 ```go
+package main
+
 import (
-    "net/http"
+	"net/http"
 
-    "github.com/eriicafes/httpx"
-    "github.com/eriicafes/httpx/openapi"
-    "github.com/eriicafes/httpx/openapi/doc"
-    "github.com/eriicafes/httpx/openapi/op"
-    "github.com/eriicafes/httpx/openapi/resp"
+	"github.com/eriicafes/httpx"
+	"github.com/eriicafes/httpx/openapi"
+	"github.com/eriicafes/httpx/openapi/doc"
+	"github.com/eriicafes/httpx/openapi/op"
+	"github.com/eriicafes/httpx/openapi/op/resp"
 )
 
-mux := httpx.New()
-mux = openapi.WithRouter(mux,
-    doc.Info("My API", "1.0.0"),
-    doc.Server("http://localhost:8080", "Local"),
-)
+type User struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
 
-router := openapi.UseRouter(mux)
+type ErrorResponse struct {
+	Message string `json:"message"`
+}
 
-router.Route("GET /users/{id}",
-    op.Options(
-        op.Summary("Get user"),
-        op.PathParam[int]("id"),
-        op.Response[User](200, resp.Description("User found")),
-        op.Response[ErrorResponse](404, resp.Description("User not found")),
-    ),
-    func(w http.ResponseWriter, r *http.Request) error {
-        return httpx.Send(w, User{})
-    },
-)
+func main() {
+	mux := httpx.New()
+	mux = openapi.WithRouter(mux, "My API", "1.0.0",
+		doc.Server("http://localhost:8080", "Local"),
+	)
 
-// Serve the OpenAPI spec and Scalar API reference UI
-mux.Handle("GET /docs", router.OpenAPIHandler())
-mux.Handle("GET /docs/reference", router.ReferenceHandler(nil))
+	router := openapi.UseRouter(mux)
 
-httpx.ListenAndServe(":8080", mux, nil)
+	router.Route("GET /users/{id}",
+		op.Options(
+			op.Summary("Get user"),
+			op.PathParam[int]("id"),
+			op.Response[User](200, resp.Description("User found")),
+			op.Response[ErrorResponse](404, resp.Description("User not found")),
+		),
+		func(w http.ResponseWriter, r *http.Request) error {
+			return httpx.Send(w, User{ID: 1})
+		},
+	)
+
+	mux.Handle("GET /docs", router.OpenAPIJSONHandler())
+	mux.Handle("GET /docs/reference", router.ReferenceHandler(nil))
+
+	httpx.ListenAndServe(":8080", mux, nil)
+}
 ```
 
 ## Setup
 
-### WithRouter
-
-Attach an OpenAPI router to an existing mux:
+Use `WithRouter` to attach OpenAPI document generation to an `httpx` mux:
 
 ```go
 mux := httpx.New()
-mux = openapi.WithRouter(mux,
-    doc.Info("My API", "1.0.0"),
-    doc.Description("API description"),
-    doc.Server("https://api.example.com", "Production"),
+mux = openapi.WithRouter(mux, "User API", "1.0.0",
+	doc.Description("API description"),
+	doc.Server("https://api.example.com", "Production"),
 )
 
-// Extract the router to register routes
 router := openapi.UseRouter(mux)
 ```
 
-`WithRouter` wraps the mux and embeds a `Router`. `UseRouter` traverses the mux chain to find and return it.
+`UseRouter` walks the mux chain, so middleware, prefixes, and other wrapping muxes still apply when you register routes through the returned router.
 
-### Standalone Router
+If you want to build a document before binding to a mux, create a standalone router:
 
-`NewRouter` creates a router with no mux bound to it. Use `router.Path` to record OpenAPI operations and serve the document without registering any handlers:
+This version records paths first and leaves handler registration for later:
 
 ```go
-router := openapi.NewRouter(
-    doc.Info("My API", "1.0.0"),
+router := openapi.NewRouter("User API", "1.0.0",
+	doc.Description("API description"),
 )
 
-// Record operations only — no handlers registered
-router.Path("GET /users", op.Options(...))
-router.Path("POST /users", op.Options(...))
-
-http.Handle("GET /docs", router.OpenAPIHandler())
+router.Operation("GET /users",
+	op.Summary("List users"),
+	op.Response[[]User](200),
+)
 ```
 
-To register handlers, bind the router to a mux first with `WithMux`:
+To register handlers later, bind that router to a mux with `WithMux`:
+
+Once bound, the returned router can register handlers just like one created with `WithRouter`:
 
 ```go
-mux := http.NewServeMux()
+mux := httpx.New()
 r := router.WithMux(mux)
-r.Route("GET /users", op.Options(...), handler)
+r.Route("POST /users", op.Options(...), handler)
 ```
 
-## Document Configuration
+## Registering Operations
 
-Configure the OpenAPI document with `doc` options passed to `WithRouter` or `NewRouter`:
+`Router` supports a few ways to register operations:
+
+Use `Route` when you want to document an operation and register an `httpx` error-returning handler at the same time:
 
 ```go
-mux = openapi.WithRouter(mux,
-    doc.Info("User API", "2.0.0"),
-    doc.Summary("Short summary"),
-    doc.Description("Full description of the API"),
-    doc.TermsOfService("https://example.com/terms"),
-    doc.Contact("API Team", "https://example.com", "api@example.com"),
-    doc.License("MIT", "https://opensource.org/licenses/MIT"),
-    // or with SPDX identifier:
-    doc.LicenseIdentifier("MIT", "MIT"),
-
-    doc.Server("http://localhost:8080", "Local"),
-    doc.Server("https://api.example.com", "Production",
-        doc.ServerVariable("region", "us-east", "us-east", "eu-west"),
-    ),
-
-    doc.Tag("users", "User management"),
-    doc.Tag("health", "Service health",
-        doc.TagExternalDocs("https://docs.example.com/health", "Health check docs"),
-    ),
-
-    doc.ExternalDocs("https://docs.example.com", "Full documentation"),
-
-    // Global security requirement
-    doc.Security("bearerAuth"),
-    // Make security optional globally (empty requirement)
-    doc.Security(""),
+router.Route("GET /health",
+	op.Options(
+		op.Summary("Health check"),
+		op.OperationId("getHealth"),
+		op.Response[map[string]string](200, resp.Description("Service is healthy")),
+	),
+	func(w http.ResponseWriter, r *http.Request) error {
+		return httpx.Send(w, map[string]string{"status": "ok"})
+	},
 )
 ```
 
-## Operation Configuration
+`Router` also supports `Handle` and `HandleFunc` when you already have a standard `http.Handler` or `func(http.ResponseWriter, *http.Request)`.
 
-Use `op.Options` to combine multiple operation options, then pass it to `router.Route` or `router.Path`:
-
-### router.Route
-
-Registers a route handler and records the OpenAPI operation:
+Use `Operation` when you only want to record the OpenAPI operation and register the runtime handler separately:
 
 ```go
-router.Route("POST /users",
-    op.Options(
-        op.Summary("Create user"),
-        op.Tags("users"),
-        op.OperationId("createUser"),
-        op.RequestBody[CreateUserRequest](body.Required()),
-        op.Response[User](201, resp.Description("User created")),
-    ),
-    func(w http.ResponseWriter, r *http.Request) error {
-        // handle request
-        w.WriteHeader(http.StatusCreated)
-        return httpx.Send(w, User{})
-    },
-)
-```
-
-### router.Path
-
-Records only the OpenAPI operation without registering a handler. Useful when the handler is registered elsewhere:
-
-```go
-router.Path("GET /health", op.Options(
-    op.Summary("Health check"),
-    op.Tags("health"),
-    op.Response[map[string]string](200),
+router.Operation("GET /health", op.Options(
+	op.Summary("Health check"),
+	op.Response[map[string]string](200),
 ))
 
-// Handler registered separately
 mux.HandleFunc("GET /health", healthHandler)
 ```
 
-### Operation Options
+## Schemas
+
+Go types are reflected automatically:
+
+These are the built-in Go-to-schema mappings used during reflection:
+
+```text
+string                -> { "type": "string" }
+bool                  -> { "type": "boolean" }
+int, int64, uint, ... -> { "type": "integer" }
+float32, float64      -> { "type": "number" }
+[]T                   -> { "type": "array", "items": <T schema> }
+map[K]V               -> { "type": "object", "additionalProperties": <V schema> }
+struct                -> { "type": "object", "properties": { ... } }
+*T                    -> same as T with "nullable": true
+time.Time             -> { "type": "string", "format": "date-time" }
+```
+
+Non-pointer struct fields become required by default. Unexported fields and `json:"-"` fields are skipped.
+
+Common schema helpers:
+
+Use these helpers to add titles, examples, enums, field-level overrides, and other general schema metadata:
 
 ```go
-op.Options(
-    op.Summary("Short summary"),
-    op.Description("Full description"),
-    op.OperationId("uniqueOperationId"),
-    op.Tags("users", "admin"),
-    op.Deprecated(),
-    op.ExternalDocs("https://docs.example.com", "External docs"),
-    op.Server("https://api.example.com", "Override server for this operation"),
-    op.Security("bearerAuth", "scope1"),  // pass "" to make security optional
-    op.PathParam[int]("id"),              // required; type inferred from T
-    op.QueryParam[string]("search"),      // optional
-    op.HeaderParam[string]("X-API-Key"), // optional
-    op.CookieParam[string]("session"),   // optional
-    op.RequestBody[CreateUserRequest](...),
-    op.Response[User](200, ...),
-    op.Response[op.NoContent](204, ...),  // no response body
+schema.Options(
+	schema.Reference("TypeName"),
+	schema.Title("Title"),
+	schema.Description("Description"),
+	schema.Format("uuid"),
+	schema.ReadOnly(),
+	schema.WriteOnly(),
+	schema.Deprecated(),
+	schema.Nullable(),
+	schema.Default("value"),
+	schema.Example("example"),
+	schema.Examples("a", "b"),
+	schema.Const("fixed"),
+	schema.Enum("a", "b", "c"),
+	schema.ExternalDocs("https://docs.example.com", "Description"),
+	schema.Field("name", schema.MinLength(1)),
 )
 ```
 
-## Parameters
+Array, object, and composition helpers use generics or `schema.Type(...)` getters:
 
-Refine parameters with `param` options:
+These helpers cover tuple validation, object rules, and schema composition:
 
 ```go
-op.QueryParam[string]("search",
-    param.Description("Filter by name or email"),
-    param.Required(),
-    param.Deprecated(),
-    param.Example("john"),
-    param.Style("form"),
-    param.Explode(true),
-    param.AllowEmptyValue(),
-    param.AllowReserved(),
-    param.NamedExample("basic", "john"),
-    param.Reference("#/components/parameters/Search"),
+schema.Options(
+	schema.MinItems(1),
+	schema.MaxItems(10),
+	schema.UniqueItems(),
+	schema.PrefixItems(schema.Type[int](), schema.Type[string]()),
+	schema.Contains[MyStruct](),
+	schema.UnevaluatedItems[MyStruct](),
+	schema.AdditionalProperties[any](),
+	schema.DependentSchemas[Extra]("flag"),
+	schema.PropertyNames[string](),
+	schema.OneOf(schema.Type[Circle](), schema.Type[Square]()),
+	schema.AnyOf(schema.Type[A](), schema.Type[B]()),
+	schema.AllOf(schema.Type[A](), schema.Type[B]()),
+	schema.Not[A](),
+	schema.If[A](),
+	schema.Then[B](),
+	schema.Else[C](),
 )
 ```
 
-## Request Body
-
-Refine the request body with `body` options:
+A type may set default schema options by implementing the `schema.Schema` interface:
 
 ```go
-op.RequestBody[CreateUserRequest](
-    body.Description("User details"),
-    body.Required(),
-    // Add additional content types alongside application/json
-    body.ContentType[CreateUserRequest]("application/xml"),
-    body.Reference("#/components/requestBodies/CreateUser"),
-)
-```
-
-## Responses
-
-Refine responses with `resp` options:
-
-```go
-op.Response[User](200,
-    resp.Description("User found"),
-    resp.Summary("Successful response"),
-    resp.Header[string]("X-Request-Id",
-        header.Description("Unique request trace ID"),
-        header.Required(),
-    ),
-    resp.Header[int]("X-Rate-Limit-Remaining",
-        header.Description("Remaining requests in the current window"),
-    ),
-    resp.Link("getUser",
-        resp.LinkOperationId("getUser"),
-        resp.LinkParameter("userId", "$response.body#/id"),
-        resp.LinkDescription("Fetch the user by ID"),
-    ),
-    // Add additional content types alongside application/json
-    resp.ContentType[User]("application/xml"),
-    resp.Reference("#/components/responses/UserResponse"),
-)
-```
-
-## Schema Customization
-
-### Schema Interface
-
-Implement `Schema() schema.Option` on your types to customize how they are reflected:
-
-```go
-type User struct {
-    ID    int    `json:"id"`
-    Name  string `json:"name"`
-    Email string `json:"email"`
-    Age   int    `json:"age"`
-}
-
-func (u User) Schema() schema.Option {
-    return schema.Options(
-        // Register in components/schemas as "User" and return a $ref
-        schema.Ref("User"),
-        // Apply constraints to individual fields
-        schema.Field("name", schema.MinLength(3), schema.MaxLength(50)),
-        schema.Field("age", schema.Minimum(18), schema.Maximum(120)),
-        schema.Field("email", schema.Email(), schema.Example("user@example.com")),
-    )
+func (User) Schema() schema.Option {
+	return schema.Options(
+		schema.Reference("User"),
+		schema.Field("name", schema.MinLength(3), schema.MaxLength(50)),
+		schema.Field("age", schema.Minimum(18), schema.Maximum(120)),
+		schema.Field("email", schema.Email(), schema.Example("user@example.com")),
+	)
 }
 ```
-
-Types that declare `schema.Ref` are automatically registered in `components/schemas` and referenced inline via `$ref`.
-
-### Schema Options Reference
-
-**General**
-
-```go
-schema.Options(
-    schema.Ref("TypeName"),         // register in components/schemas, return $ref
-    schema.Title("Title"),
-    schema.Description("Description"),
-    schema.Format("uuid"),          // prefer named helpers: Email(), UUID(), DateTime()
-    schema.ReadOnly(),              // value must not be sent in requests
-    schema.WriteOnly(),             // value must not be included in responses
-    schema.Deprecated(),
-    schema.Nullable(),              // prefer pointer types in OpenAPI 3.1
-    schema.Default("value"),
-    schema.Example("example"),
-    schema.Examples("a", "b"),      // OpenAPI 3.1
-    schema.Const("fixed"),
-    schema.Enum("a", "b", "c"),
-    schema.ExternalDocs("https://docs.example.com", "Description"),
-    schema.Field("name", ...),      // apply options to a named struct property
-)
-```
-
-**String**
-
-```go
-schema.Options(
-    schema.MinLength(3),
-    schema.MaxLength(50),
-    schema.Pattern(`^\d+$`),
-    schema.Email(),
-    schema.UUID(),
-    schema.DateTime(),
-    schema.ContentEncoding("base64"),
-    schema.ContentMediaType("image/png"),
-)
-```
-
-**Numeric**
-
-```go
-schema.Options(
-    schema.Minimum(0),
-    schema.Maximum(100),
-    schema.ExclusiveMinimum(0),   // OpenAPI 3.1
-    schema.ExclusiveMaximum(100), // OpenAPI 3.1
-    schema.MultipleOf(5),
-)
-```
-
-**Array**
-
-```go
-schema.Options(
-    schema.MinItems(1),
-    schema.MaxItems(10),
-    schema.UniqueItems(),
-    schema.PrefixItems(int(0), ""),      // tuple validation per position, OpenAPI 3.1
-    schema.Contains(MyStruct{}),         // at least one item must match, OpenAPI 3.1
-    schema.MinContains(1),
-    schema.MaxContains(5),
-    schema.UnevaluatedItems(MyStruct{}), // schema for items beyond prefixItems, OpenAPI 3.1
-)
-```
-
-**Object**
-
-```go
-schema.Options(
-    schema.MinProperties(1),
-    schema.MaxProperties(10),
-    schema.AdditionalProperties[any](),                   // use a concrete type to constrain
-    schema.PatternProperties(`^\w+$`, schema.Title("...")),
-    schema.DependentRequired("flag", "field1", "field2"), // OpenAPI 3.1
-    schema.DependentSchemas("flag", Extra{}),             // OpenAPI 3.1
-    schema.PropertyNames(""),                             // OpenAPI 3.1
-    schema.UnevaluatedProperties[any](),                  // OpenAPI 3.1
-)
-```
-
-**Composition**
-
-```go
-schema.Options(
-    schema.AllOf(TypeA{}, TypeB{}),
-    schema.OneOf(TypeA{}, TypeB{}),
-    schema.AnyOf(TypeA{}, TypeB{}),
-    schema.Not(TypeA{}),
-    schema.If(TypeA{}),   // OpenAPI 3.1
-    schema.Then(TypeB{}), // OpenAPI 3.1
-    schema.Else(TypeC{}), // OpenAPI 3.1
-)
-```
-
-**XML**
-
-```go
-schema.Options(
-    schema.XMLName("element"),
-    schema.XMLNamespace("https://example.com/ns"),
-    schema.XMLPrefix("ns"),
-    schema.XMLAttribute(), // render as XML attribute instead of element
-    schema.XMLWrapped(),   // wrap array in an enclosing XML element
-)
-```
-
-### Type Reflection
-
-Go types are automatically reflected to JSON Schema:
-
-```
-string                → { "type": "string" }
-bool                  → { "type": "boolean" }
-int, int64, uint, ... → { "type": "integer" }
-float32, float64      → { "type": "number" }
-[]T                   → { "type": "array", "items": <T schema> }
-map[K]V               → { "type": "object", "additionalProperties": <V schema> }
-struct                → { "type": "object", "properties": { ... } }
-*T                    → same as T with "nullable": true
-time.Time             → { "type": "string", "format": "date-time" }
-```
-
-Non-pointer struct fields are added to `required`. Unexported fields and `json:"-"` tagged fields are skipped.
 
 ### Union Types
 
-Types from `github.com/eriicafes/union` are expanded to `oneOf` automatically.
+Types from `github.com/eriicafes/union` expand automatically.
 
-`union.Union[Spec]` expands to an untagged `oneOf` across all case types in the spec:
+An untagged union expands its cases into `anyOf`:
 
 ```go
 type Shape union.Union[ShapeSpec]
+
 type ShapeSpec struct {
-    Circle  Circle
-    Square  Square
+	Circle *Circle
+	Square *Square
 }
-// Generates: oneOf: [Circle schema, Square schema]
 ```
 
-`union.TaggedUnion[Spec]` expands to a tagged `oneOf` with a discriminator. Each case is an object with a `type` key and a `value` key:
+That produces an untagged `anyOf` across `Circle` and `Square`.
+
+Tagged unions expand into `oneOf` and add a discriminator-backed wrapper object for each case:
 
 ```go
 type Shape union.TaggedUnion[ShapeSpec]
-// Generates: oneOf with discriminator on "type":
-//   { "type": "Circle", "value": { ...Circle schema } }
-//   { "type": "Square", "value": { ...Square schema } }
 ```
 
-## Serving the Spec
+That produces a tagged `oneOf` with a discriminator, using `"type"` and `"value"` by default.
 
-### OpenAPI JSON
+## Document Options
+
+Document metadata is configured with `doc.Option` values passed to `WithRouter` or `NewRouter`:
+
+Use `doc` options for top-level metadata, external docs, security requirements, and component registration:
 
 ```go
-mux.Handle("GET /docs", router.OpenAPIHandler())
-// GET /docs returns the OpenAPI JSON spec
+mux = openapi.WithRouter(mux, "User API", "2.0.0",
+	doc.Version("3.1.0"),
+	doc.Summary("Short summary"),
+	doc.Description("Full description of the API"),
+	doc.TermsOfService("https://example.com/terms"),
+	doc.Contact("API Team", "https://example.com", "api@example.com"),
+	doc.License("MIT", "https://opensource.org/licenses/MIT", ""),
+
+	doc.Server("http://localhost:8080", "Local"),
+	doc.Server("https://{region}.api.example.com", "Production",
+		server.Variable("region", "us-east",
+			server.VariableEnum("us-east", "eu-west"),
+			server.VariableDescription("Deployment region"),
+		),
+	),
+
+	doc.Tag("users", "User management"),
+	doc.Tag("health", "Service health",
+		tag.ExternalDocs("https://docs.example.com/health", "Health check docs"),
+	),
+
+	doc.ExternalDocs("https://docs.example.com", "Full documentation"),
+	doc.SecurityScheme("bearerAuth",
+		securityscheme.HTTP("bearer"),
+		securityscheme.BearerFormat("JWT"),
+	),
+	doc.Security("bearerAuth"),
+)
 ```
 
-### Scalar API Reference UI
+### Server Options
+
+Use `server.Option` values to refine `doc.Server(...)` or `pathitem.Server(...)` entries:
 
 ```go
-// Minimal setup — uses the document title and embedded spec
+doc.Server("https://{region}.api.example.com", "Production",
+	server.Name("production"),
+	server.Variable("region", "us-east",
+		server.VariableEnum("us-east", "eu-west"),
+		server.VariableDescription("Deployment region"),
+	),
+)
+```
+
+### Tag Options
+
+Use `tag.Option` values to enrich tags added through `doc.Tag(...)`:
+
+```go
+doc.Tag("health", "Service health",
+	tag.Summary("Operational endpoints"),
+	tag.ExternalDocs("https://docs.example.com/health", "Health check docs"),
+)
+```
+
+### Security Scheme Options
+
+Use `securityscheme.Option` values when registering reusable schemes with `doc.SecurityScheme(...)`:
+
+```go
+doc.SecurityScheme("bearerAuth",
+	securityscheme.Description("JWT bearer authentication"),
+	securityscheme.HTTP("bearer"),
+	securityscheme.BearerFormat("JWT"),
+)
+```
+
+## Path Item Options
+
+Use `pathitem.Option` values for path-level metadata, shared parameters, and server overrides:
+
+```go
+path := pathitem.New(
+	pathitem.Summary("Health endpoints"),
+	pathitem.Description("Operations for checking service health"),
+	pathitem.Parameter[string](param.InHeader, "X-Region"),
+	pathitem.Server("https://internal.example.com", "Internal"),
+)
+```
+
+Use `pathitem.Path` when you want to group multiple methods and shared path-level settings under one route:
+
+```go
+path := pathitem.New(
+	pathitem.Description("Health endpoints"),
+)
+
+path.Route(http.MethodGet,
+	op.Options(
+		op.Summary("Get health"),
+		op.Response[map[string]string](200),
+	),
+	getHealth,
+)
+
+path.Route(http.MethodPost,
+	op.Options(
+		op.Summary("Run health check"),
+		op.Response[map[string]string](200),
+	),
+	runHealthCheck,
+)
+
+router.Path("/health", path)
+```
+
+## Operation Options
+
+Combine operation-level settings with `op.Options`:
+
+```go
+op.Options(
+	op.Summary("Short summary"),
+	op.Description("Full description"),
+	op.OperationId("uniqueOperationId"),
+	op.Tags("users", "admin"),
+	op.Deprecated(),
+	op.ExternalDocs("https://docs.example.com", "External docs"),
+	op.Server("https://api.example.com", "Override server"),
+	op.Security("bearerAuth", "scope1"),
+	op.PathParam[int]("id"),
+	op.QueryParam[string]("search"),
+	op.HeaderParam[string]("X-API-Key"),
+	op.CookieParam[string]("session"),
+	op.RequestBody[CreateUserRequest](),
+	op.Response[User](200),
+	op.Response[op.NoContent](204),
+)
+```
+
+## Parameter Options
+
+This example shows how to refine a generated parameter with descriptions, examples, serialization rules, and a component reference:
+
+```go
+op.QueryParam[string]("search",
+	param.Description("Filter by name or email"),
+	param.Required(true),
+	param.Deprecated(),
+	param.Example("john"),
+	param.Style("form"),
+	param.Explode(true),
+	param.AllowEmptyValue(),
+	param.AllowReserved(),
+	param.NamedExample("basic", "john"),
+	param.Reference("Search"),
+)
+```
+
+A type may set default parameter options by implementing the `param.Parameter` interface:
+
+```go
+func (T) Parameter() param.Option
+```
+
+those defaults are applied before inline options.
+
+## Request Bodies
+
+`op.RequestBody[T]` creates a request body for `T` and adds `application/json` by default. Use `op.NoContent` when an operation has no body.
+
+Add request-body metadata, alternate media types, or store the body as a reusable component:
+
+```go
+op.RequestBody[CreateUserRequest](
+	body.Description("User details"),
+	body.Required(true),
+	body.ContentType[CreateUserRequest]("application/xml"),
+	body.Reference("CreateUser"),
+)
+```
+
+A type may set default request body options by implementing the `body.RequestBody` interface:
+
+```go
+func (T) RequestBody() body.Option
+```
+
+those defaults are applied before inline options.
+
+## Media Type Options
+
+Use `mediatype.Option` values to refine generated content entries for request and response bodies:
+
+```go
+body.ContentType[CreateUserRequest]("application/json",
+	mediatype.Example(CreateUserRequest{Name: "Ada"}),
+	mediatype.NamedExample("sample", CreateUserRequest{Name: "Grace"}),
+	mediatype.Encoding("avatar", mediatype.EncodingContentType("image/png")),
+)
+```
+
+A type may set default media type options by implementing the `mediatype.MediaType` interface:
+
+```go
+func (T) MediaType() mediatype.Option
+```
+
+those defaults are applied before inline options.
+
+## Responses
+
+`op.Response[T](status, ...)` uses `http.StatusText(status)` as the default description and adds `application/json` content unless `T` is `op.NoContent`.
+
+Responses can declare headers, links, alternate media types, and reusable component references:
+
+```go
+op.Response[User](200,
+	resp.Description("User found"),
+	resp.Summary("Successful response"),
+	resp.Header[string]("X-Request-Id",
+		header.Description("Unique request trace ID"),
+		header.Required(true),
+	),
+	resp.Link("getUser",
+		link.OperationId("getUser"),
+		link.Parameter("userId", "$response.body#/id"),
+		link.Description("Fetch the user by ID"),
+	),
+	resp.ContentType[User]("application/xml"),
+	resp.Reference("UserResponse"),
+)
+```
+
+A type may set default response options by implementing the `resp.Response` interface:
+
+```go
+func (T) Response() resp.Option
+```
+
+those defaults are applied before inline options.
+
+## Header Options
+
+Use `header.Option` values for response headers:
+
+```go
+resp.Header[string]("X-Request-Id",
+	header.Description("Unique request trace ID"),
+	header.Style("simple"),
+	header.Example("req_123"),
+	header.NamedExample("sample", "req_456"),
+)
+```
+
+A type may set default header options by implementing the `header.Header` interface:
+
+```go
+func (T) Header() header.Option
+```
+
+those defaults are applied before inline options.
+
+## Link Options
+
+Use `link.Option` values to describe follow-up operations available from a response:
+
+```go
+resp.Link("getUser",
+	link.OperationId("getUser"),
+	link.Parameter("userId", "$response.body#/id"),
+	link.Description("Fetch the created user by ID"),
+	link.Server("https://api.example.com", "Production"),
+)
+```
+
+## Example Options
+
+Use `example.Option` values when adding named examples to parameters, headers, or media types:
+
+```go
+param.NamedExample("basic", "healthy",
+	example.Summary("Basic health state"),
+	example.Description("Returned when the service is healthy"),
+)
+```
+
+## Callback Options
+
+Use `callback.Option` values to attach callbacks to operations:
+
+```go
+op.Options(
+	op.Callback("onHealthChange",
+		callback.Reference("HealthStatusChanged"),
+	),
+)
+```
+
+## Advanced Patterns
+
+A single type may implement more than one interface at a time. This lets one type provide defaults at multiple OpenAPI layers.
+
+This is especially useful with `Reference(...)` options. A type can set its own component reference through an interface-provided default, which keeps call sites short and reuses the same component everywhere.
+
+For example, a response type can set default schema, response and media type options at the same time:
+
+```go
+type User struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (User) Schema() schema.Option {
+	return schema.Options(
+		// Register the reflected schema in components/schemas.
+		schema.Reference("User"),
+		schema.Field("name", schema.MinLength(1)),
+	)
+}
+
+func (User) Response() resp.Option {
+	return resp.Options(
+		// Register the response in components/responses.
+		resp.Reference("UserResponse"),
+		resp.Header[string]("X-Resource-Type",
+			header.Example("user"),
+		),
+	)
+}
+
+func (User) MediaType() mediatype.Option {
+	return mediatype.Options(
+		mediatype.NamedExample("default", User{
+			ID:   1,
+			Name: "Ada",
+		}),
+	)
+}
+
+op.Response[User](200)
+```
+
+Likewise, a request type can combine schema, request body, and media type defaults:
+
+```go
+type CreateUserRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func (CreateUserRequest) Schema() schema.Option {
+	return schema.Options(
+		schema.Reference("CreateUserRequest"),
+		schema.Field("email", schema.Email()),
+	)
+}
+
+func (CreateUserRequest) RequestBody() body.Option {
+	return body.Options(
+		body.Description("Payload for creating a user"),
+		body.Reference("CreateUserBody"),
+	)
+}
+
+func (CreateUserRequest) MediaType() mediatype.Option {
+	return mediatype.Options(
+		mediatype.NamedExample("default", CreateUserRequest{
+			Name:  "Ada",
+			Email: "ada@example.com",
+		}),
+	)
+}
+
+op.RequestBody[CreateUserRequest]()
+```
+
+References also work inline. One call site can define the full object, and another can reuse it by reference:
+
+```go
+// First call site: define the reusable response and store it in components/responses.
+op.Response[User](200,
+	resp.Description("User response"),
+	resp.Header[string]("X-Request-Id",
+		header.Description("Unique request trace ID"),
+	),
+	resp.Reference("UserResponse"),
+)
+
+// Later call site: reuse the stored component by reference.
+op.Response[User](200,
+	resp.Reference("UserResponse"),
+)
+```
+
+Inline options are skipped only when the type itself sets `Reference(...)` through an implemented interface. That keeps the stored component unambiguous even when different call sites pass different inline options.
+
+## Serving the Document
+
+Serve the generated document directly as JSON or YAML:
+
+```go
+mux.Handle("GET /docs/openapi.json", router.OpenAPIJSONHandler())
+mux.Handle("GET /docs/openapi.yaml", router.OpenAPIYAMLHandler())
+```
+
+To serve Scalar:
+
+Use the built-in Scalar handler when the default embedded configuration is enough:
+
+```go
 mux.Handle("GET /docs/reference", router.ReferenceHandler(nil))
+```
 
-// Custom Scalar options
-mux.Handle("GET /docs/reference", router.ReferenceHandler(&scalar.Options{
-    SpecURL: "http://localhost:8080/docs",
-    Theme:   scalar.ThemeDefault,
-    CustomOptions: scalar.CustomOptions{
-        PageTitle: "My API Reference",
-    },
+Or with custom options:
+
+Pass `scalar.Options` to point Scalar at a hosted spec URL or customize the page:
+
+```go
+mux.Handle("GET /docs", router.ReferenceHandler(&scalar.Options{
+	SpecURL: "http://localhost:8080/docs/openapi.json",
+	Theme:   scalar.ThemeDefault,
+	CustomOptions: scalar.CustomOptions{
+		PageTitle: "My API Reference",
+	},
 }))
 ```
 
-### Raw Document
+If you need the raw document:
 
-Access the underlying `*v3.Document` for custom rendering or validation:
+You can always access the underlying `*v3.Document` from `github.com/pb33f/libopenapi/datamodel/high/v3` for custom rendering or validation:
 
 ```go
 doc := router.GetDocument()
 yaml, err := doc.Render()
-```
-
-## Composing with httpx Mux
-
-`openapi.WithRouter` returns a standard `httpx.Mux`, so it composes naturally with other httpx mux types:
-
-```go
-mux := httpx.New()
-mux = httpx.NormalizeTrailingSlash(mux)
-mux = openapi.WithRouter(mux, doc.Info("My API", "1.0.0"))
-mux = httpx.Use(mux, loggingMiddleware, authMiddleware)
-mux = httpx.Fallback(mux, errorHandler)
-
-router := openapi.UseRouter(mux)
-
-router.Route("GET /users", op.Options(
-    op.Summary("List users"),
-    op.Response[[]User](200),
-), func(w http.ResponseWriter, r *http.Request) error {
-    // trailing slash normalized, middleware applied, custom error handling
-    return httpx.Send(w, []User{})
-})
+json, err := doc.RenderJSON("")
 ```

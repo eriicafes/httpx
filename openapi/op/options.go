@@ -1,7 +1,6 @@
 package op
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/eriicafes/httpx/openapi/op/body"
@@ -142,7 +141,7 @@ func Response[T any](status int, opts ...resp.Option) Option {
 		if operation.Responses.Codes == nil {
 			operation.Responses.Codes = orderedmap.New[string, *v3.Response]()
 		}
-		r := resp.New[T](store, http.StatusText(status), opts...)
+		r := resp.New[T](store, opts...)
 		operation.Responses.Codes.Set(strconv.Itoa(status), r)
 	}
 }

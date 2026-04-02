@@ -6,13 +6,7 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 )
 
-// Callback may be implemented to set default callback options on a type.
-//
-//	func (T) Callback() callback.Option
-type Callback interface {
-	Callback() Option
-}
-
+// New builds a callback and stores it as a component when referenced.
 func New(store *store.Store, opts ...Option) *v3.Callback {
 	cb := &v3.Callback{
 		Expression: orderedmap.New[string, *v3.PathItem](),

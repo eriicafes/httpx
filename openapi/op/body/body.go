@@ -14,6 +14,8 @@ type RequestBody interface {
 	RequestBody() Option
 }
 
+// New builds a request body for T.
+// Unless T is op.NoContent, it adds an application/json media type by default.
 func New[T any](store *store.Store, opts ...Option) *v3.RequestBody {
 	required := true
 	b := &v3.RequestBody{

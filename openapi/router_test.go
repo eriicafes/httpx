@@ -2,11 +2,14 @@ package openapi
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/eriicafes/httpx"
 	"github.com/eriicafes/httpx/openapi/doc"
 	"github.com/eriicafes/httpx/openapi/op"
+	"github.com/eriicafes/httpx/openapi/pathitem"
 )
 
 var normalizePathTests = []struct {
@@ -344,4 +347,132 @@ func TestUseRouter_BindsOriginalMux(t *testing.T) {
 	if _, ok := r.GetDocument().Paths.PathItems.Get("/v1/users"); !ok {
 		t.Error("expected path /v1/users using the bound mux prefix")
 	}
+}
+
+func TestRouter_HandleAndHandleFunc_RegisterHandlersAndDocs(t *testing.T) {
+	r := NewRouter("API", "1.0").WithMux(http.NewServeMux())
+
+	r.Handle("GET /health",
+		op.Options(op.Summary("health"), op.Response[map[string]string](http.StatusOK)),
+		http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Write([]byte("ok"))
+		}),
+	)
+	r.HandleFunc("POST /health",
+		op.Options(op.Summary("queue health"), op.Response[op.NoContent](http.StatusAccepted)),
+		func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		},
+	)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/health", nil)
+	getRec := httptest.NewRecorder()
+	r.mux.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK || getRec.Body.String() != "ok" {
+		t.Fatalf("GET handler mismatch: code=%d body=%q", getRec.Code, getRec.Body.String())
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/health", nil)
+	postRec := httptest.NewRecorder()
+	r.mux.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusAccepted {
+		t.Fatalf("POST handler status = %d, want %d", postRec.Code, http.StatusAccepted)
+	}
+
+	item, ok := r.GetDocument().Paths.PathItems.Get("/health")
+	if !ok || item.Get == nil || item.Post == nil {
+		t.Fatalf("expected GET and POST operations on /health: %#v ok=%v", item, ok)
+	}
+	if item.Get.Summary != "health" || item.Post.Summary != "queue health" {
+		t.Fatalf("unexpected operation summaries: get=%q post=%q", item.Get.Summary, item.Post.Summary)
+	}
+}
+
+func TestRouter_Path_MergesOperationsAndHandlers(t *testing.T) {
+	r := NewRouter("API", "1.0").WithMux(http.NewServeMux())
+	p := pathitem.New(pathitem.Summary("service health"))
+	p.Route(http.MethodGet, op.Options(op.Summary("read health")), func(w http.ResponseWriter, req *http.Request) error {
+		w.Write([]byte("ready"))
+		return nil
+	})
+	p.HandleFunc(http.MethodPost, op.Options(op.Summary("refresh health")), func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	r.Path("/health", p)
+
+	getRec := httptest.NewRecorder()
+	r.mux.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if getRec.Code != http.StatusOK || getRec.Body.String() != "ready" {
+		t.Fatalf("GET path handler mismatch: code=%d body=%q", getRec.Code, getRec.Body.String())
+	}
+
+	postRec := httptest.NewRecorder()
+	r.mux.ServeHTTP(postRec, httptest.NewRequest(http.MethodPost, "/health", nil))
+	if postRec.Code != http.StatusAccepted {
+		t.Fatalf("POST path handler status = %d, want %d", postRec.Code, http.StatusAccepted)
+	}
+
+	item, ok := r.GetDocument().Paths.PathItems.Get("/health")
+	if !ok || item.Get == nil || item.Post == nil || item.Summary != "service health" {
+		t.Fatalf("expected merged path item, got %#v ok=%v", item, ok)
+	}
+}
+
+func TestRouter_DocumentHandlers(t *testing.T) {
+	r := NewRouter("API", "1.0", doc.Webhook("user.created", pathitem.New(pathitem.Description("webhook")).PathItem()))
+	r.Operation("GET /health", op.Summary("health"))
+
+	jsonRec := httptest.NewRecorder()
+	r.OpenAPIJSONHandler().ServeHTTP(jsonRec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if got := jsonRec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("JSON handler content type = %q, want application/json", got)
+	}
+	if !strings.Contains(jsonRec.Body.String(), "\"title\": \"API\"") || !strings.Contains(jsonRec.Body.String(), "/health") {
+		t.Fatalf("JSON handler did not render expected document: %q", jsonRec.Body.String())
+	}
+
+	yamlRec := httptest.NewRecorder()
+	r.OpenAPIYAMLHandler().ServeHTTP(yamlRec, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+	if got := yamlRec.Header().Get("Content-Type"); got != "application/yaml" {
+		t.Fatalf("YAML handler content type = %q, want application/yaml", got)
+	}
+	if !strings.Contains(yamlRec.Body.String(), "openapi: 3.1.0") || !strings.Contains(yamlRec.Body.String(), "/health:") {
+		t.Fatalf("YAML handler did not render expected document: %q", yamlRec.Body.String())
+	}
+
+	htmlRec := httptest.NewRecorder()
+	r.ReferenceHandler(nil).ServeHTTP(htmlRec, httptest.NewRequest(http.MethodGet, "/reference", nil))
+	if got := htmlRec.Header().Get("Content-Type"); got != "text/html" {
+		t.Fatalf("reference handler content type = %q, want text/html", got)
+	}
+	if !strings.Contains(htmlRec.Body.String(), "<title>API</title>") {
+		t.Fatalf("reference handler did not render API title: %q", htmlRec.Body.String())
+	}
+}
+
+func TestRouter_ReferenceConflictsPanic(t *testing.T) {
+	t.Run("operation conflicts with referenced path", func(t *testing.T) {
+		r := NewRouter("API", "1.0").WithMux(http.NewServeMux())
+		r.Path("/health", pathitem.New(pathitem.Reference("SharedHealth")))
+
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected panic for operation on referenced path")
+			}
+		}()
+		r.Operation("GET /health", op.Summary("health"))
+	})
+
+	t.Run("referenced path conflicts with concrete path", func(t *testing.T) {
+		r := NewRouter("API", "1.0").WithMux(http.NewServeMux())
+		r.Operation("GET /health", op.Summary("health"))
+
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected panic for referenced path conflicting with concrete path")
+			}
+		}()
+		r.Path("/health", pathitem.New(pathitem.Reference("SharedHealth")))
+	})
 }

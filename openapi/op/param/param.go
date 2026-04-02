@@ -7,9 +7,13 @@ import (
 )
 
 const (
-	InPath   = "path"
-	InQuery  = "query"
+	// InPath identifies a path parameter.
+	InPath = "path"
+	// InQuery identifies a query parameter.
+	InQuery = "query"
+	// InHeader identifies a header parameter.
 	InHeader = "header"
+	// InCookie identifies a cookie parameter.
 	InCookie = "cookie"
 )
 
@@ -20,6 +24,7 @@ type Parameter interface {
 	Parameter() Option
 }
 
+// New builds a parameter for T in the given location with the provided name.
 func New[T any](in, name string, store *store.Store, opts ...Option) *v3.Parameter {
 	p := &v3.Parameter{
 		Name:   name,

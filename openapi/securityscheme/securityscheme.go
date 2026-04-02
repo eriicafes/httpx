@@ -6,13 +6,20 @@ import (
 )
 
 const (
-	TypeApiKey        = "apiKey"
-	TypeHTTP          = "http"
-	TypeOAuth2        = "oauth2"
+	// TypeApiKey identifies an apiKey security scheme.
+	TypeApiKey = "apiKey"
+	// TypeHTTP identifies an http security scheme.
+	TypeHTTP = "http"
+	// TypeOAuth2 identifies an oauth2 security scheme.
+	TypeOAuth2 = "oauth2"
+	// TypeOpenIdConnect identifies an openIdConnect security scheme.
 	TypeOpenIdConnect = "openIdConnect"
 
+	// InHeader identifies a header API key location.
 	InHeader = "header"
-	InQuery  = "query"
+	// InQuery identifies a query API key location.
+	InQuery = "query"
+	// InCookie identifies a cookie API key location.
 	InCookie = "cookie"
 )
 

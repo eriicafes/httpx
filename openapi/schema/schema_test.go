@@ -284,6 +284,14 @@ func TestNew_StructPointerField(t *testing.T) {
 
 // schemaType is a struct type that implements Schema and requests
 // registration under a named $ref.
+type schemaDefaults struct {
+	ID int
+}
+
+func (schemaDefaults) Schema() Option {
+	return Description("from type")
+}
+
 type schemaType struct {
 	ID   int
 	Name string
@@ -315,6 +323,14 @@ func TestNew_WithoutReference(t *testing.T) {
 	// No schema should be stored in the map for a type without Reference.
 	if components.Schemas != nil && components.Schemas.Len() > 0 {
 		t.Error("expected no schemas stored for type without Reference")
+	}
+}
+
+func TestNew_AppliesTypeDefaults(t *testing.T) {
+	proxy := New[schemaDefaults](nil)
+	s := proxy.Schema()
+	if s == nil || s.Description != "from type" {
+		t.Fatalf("type defaults not applied: %#v", s)
 	}
 }
 
