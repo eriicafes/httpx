@@ -1,5 +1,11 @@
 # httpx
 
+## 0.5.0
+
+### Minor Changes
+
+- d273bc4: Handle embedded structs like encoding/json
+
 ## 0.4.0
 
 ### Minor Changes
