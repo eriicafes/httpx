@@ -282,6 +282,64 @@ func TestNew_StructPointerField(t *testing.T) {
 	}
 }
 
+func TestNew_EmbeddedStructUntagged(t *testing.T) {
+	type Base struct {
+		ID   int
+		Name string
+	}
+	type Extended struct {
+		Base
+		Extra string
+	}
+
+	proxy := New[Extended](nil)
+	s := proxy.Schema()
+
+	// Matching encoding/json semantics, an untagged anonymous field's fields
+	// are promoted/flattened into the parent object rather than nested.
+	if _, ok := s.Properties.Get("Base"); ok {
+		t.Error("did not expect nested 'Base' property; embedded fields should be flattened")
+	}
+	for _, name := range []string{"ID", "Name", "Extra"} {
+		if _, ok := s.Properties.Get(name); !ok {
+			t.Errorf("expected promoted property %q to exist", name)
+		}
+	}
+
+	required := make(map[string]bool, len(s.Required))
+	for _, r := range s.Required {
+		required[r] = true
+	}
+	for _, name := range []string{"ID", "Name", "Extra"} {
+		if !required[name] {
+			t.Errorf("expected promoted field %q to be required", name)
+		}
+	}
+}
+
+func TestNew_EmbeddedStructTagged(t *testing.T) {
+	type Base struct {
+		ID   int
+		Name string
+	}
+	type Extended struct {
+		Base  `json:"base"`
+		Extra string
+	}
+
+	proxy := New[Extended](nil)
+	s := proxy.Schema()
+
+	// A json-tagged anonymous field behaves like a regular named field,
+	// matching encoding/json semantics (no promotion when tagged).
+	if _, ok := s.Properties.Get("base"); !ok {
+		t.Error("expected embedded field to appear as 'base' property")
+	}
+	if _, ok := s.Properties.Get("Base"); ok {
+		t.Error("did not expect 'Base' property when json tag renames the field")
+	}
+}
+
 // schemaType is a struct type that implements Schema and requests
 // registration under a named $ref.
 type schemaDefaults struct {
