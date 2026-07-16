@@ -122,35 +122,8 @@ func getSchemaForType(t reflect.Type, store *store.Store, visited map[reflect.Ty
 		visited[t] = true
 
 		props := orderedmap.New[string, *base.SchemaProxy]()
-		required := []string{}
+		required := collectStructFields(t, store, visited, props, nil)
 
-		for i := range t.NumField() {
-			f := t.Field(i)
-			if !f.IsExported() {
-				continue
-			}
-			name, omittable := f.Name, false
-			if tag, ok := f.Tag.Lookup("json"); ok {
-				tagName, restTag, _ := strings.Cut(tag, ",")
-				if tagName == "-" {
-					continue
-				}
-				if tagName != "" {
-					name = tagName
-				}
-				if strings.Contains(restTag, "omitempty") || strings.Contains(restTag, "omitzero") {
-					omittable = true
-				}
-			}
-			fieldSchema := getSchemaForType(f.Type, store, visited)
-			if fieldSchema == nil {
-				continue
-			}
-			props.Set(name, fieldSchema)
-			if f.Type.Kind() != reflect.Pointer && !omittable {
-				required = append(required, name)
-			}
-		}
 		schema = &base.Schema{
 			Type:       []string{"object"},
 			Properties: props,
@@ -187,6 +160,54 @@ func getSchemaForType(t reflect.Type, store *store.Store, visited map[reflect.Ty
 		return store.SetSchema(t, state.Reference, proxy)
 	}
 	return proxy
+}
+
+// collectStructFields appends t's fields as properties into props and returns
+// required with the names of required fields appended.
+// Untagged anonymous struct fields (or pointers to structs) are flattened into
+// the parent object, matching encoding/json promotion semantics.
+func collectStructFields(t reflect.Type, store *store.Store, visited map[reflect.Type]bool, props *orderedmap.Map[string, *base.SchemaProxy], required []string) []string {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		tag, hasTag := f.Tag.Lookup("json")
+		if f.Anonymous && !hasTag {
+			ft := f.Type
+			for ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			isTime := ft.PkgPath() == "time" && ft.Name() == "Time"
+			if ft.Kind() == reflect.Struct && !isTime {
+				required = collectStructFields(ft, store, visited, props, required)
+				continue
+			}
+		}
+
+		name, omittable := f.Name, false
+		if hasTag {
+			tagName, restTag, _ := strings.Cut(tag, ",")
+			if tagName == "-" {
+				continue
+			}
+			if tagName != "" {
+				name = tagName
+			}
+			if strings.Contains(restTag, "omitempty") || strings.Contains(restTag, "omitzero") {
+				omittable = true
+			}
+		}
+		fieldSchema := getSchemaForType(f.Type, store, visited)
+		if fieldSchema == nil {
+			continue
+		}
+		props.Set(name, fieldSchema)
+		if f.Type.Kind() != reflect.Pointer && !omittable {
+			required = append(required, name)
+		}
+	}
+	return required
 }
 
 const unionPkg = "github.com/eriicafes/union"
