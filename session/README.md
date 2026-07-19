@@ -10,7 +10,7 @@ go get github.com/eriicafes/httpx
 
 ## Session-based Authentication
 
-Session-based authentication following the [Lucia Auth guide](https://lucia-auth.com/sessions/cookies/) for secure session management.
+Session-based authentication following the [Lucia Auth guide](https://lucia-auth.com/sessions/overview) for secure session management.
 
 **Features:**
 - Secure session token generation and validation
