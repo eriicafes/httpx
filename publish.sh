@@ -6,8 +6,8 @@ NEW_VERSION=$(grep -m 1 '"version"' package.json | awk -F '"' '{print $4}')
 
 echo "Publishing version v$NEW_VERSION"
 
-# Check if tag already exists
-if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
+# Check if tag already exists on remote
+if git ls-remote --exit-code --tags origin "refs/tags/v$NEW_VERSION" >/dev/null 2>&1; then
   echo "Tag v$NEW_VERSION already exists, skipping tag creation"
 else
   # Create tag
